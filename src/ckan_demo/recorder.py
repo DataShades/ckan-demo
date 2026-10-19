@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
@@ -92,29 +93,75 @@ def record(
     scenes: list[Scene],
     *,
     headed: bool = False,
+    jobs: int = 1,
     on_scene: Callable[[str], object] = print,
 ) -> list[Clip]:
-    """Record ``scenes`` to ``<output>/<scene>.webm``."""
+    """Record ``scenes`` to ``<output>/<scene>.webm``, ``jobs`` at a time."""
     options.output.mkdir(parents=True, exist_ok=True)
-    clips: list[Clip] = []
 
-    with sync_playwright() as playwright, tempfile.TemporaryDirectory() as tmp:
-        browser = playwright.chromium.launch(headless=not headed)
-        try:
-            states = {
-                key: _login(browser, options, scenario.users[key], Path(tmp) / f"{key}.json")
-                for key in {scene.user for scene in scenes if scene.user}
-            }
-            for scene in scenes:
-                on_scene(f"Recording {scene.name}…")
-                try:
-                    clip = _record_scene(browser, options, scene, states.get(scene.user or ""), Path(tmp) / scene.name)
-                except Exception as error:
-                    raise RecordingError(scene.name, error, clips) from error
-                target = options.output / f"{scene.name}.webm"
-                shutil.move(clip.path, target)
-                clips.append(Clip(target, clip.lead_in))
-        finally:
-            browser.close()
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=not headed)
+            try:
+                states = {
+                    key: _login(browser, options, scenario.users[key], tmp / f"{key}.json")
+                    for key in {scene.user for scene in scenes if scene.user}
+                }
+                if jobs <= 1:
+                    clips: list[Clip] = []
+                    for scene in scenes:
+                        on_scene(f"Recording {scene.name}…")
+                        try:
+                            clip = _record_scene(
+                                browser, options, scene, states.get(scene.user or ""), tmp / scene.name
+                            )
+                        except Exception as error:
+                            raise RecordingError(scene.name, error, clips) from error
+                        clips.append(_keep(clip, options, scene))
+                    return clips
+            finally:
+                browser.close()
 
+        return _record_in_parallel(options, scenes, states, tmp, headed=headed, jobs=jobs, on_scene=on_scene)
+
+
+def _keep(clip: Clip, options: Options, scene: Scene) -> Clip:
+    target = options.output / f"{scene.name}.webm"
+    shutil.move(clip.path, target)
+    return Clip(target, clip.lead_in)
+
+
+def _record_in_parallel(
+    options: Options,
+    scenes: list[Scene],
+    states: dict[str, Path],
+    tmp: Path,
+    *,
+    headed: bool,
+    jobs: int,
+    on_scene: Callable[[str], object],
+) -> list[Clip]:
+    """Each worker thread gets its own Playwright and browser; the sync API
+    can't be shared between threads."""
+
+    def work(scene: Scene) -> Clip:
+        on_scene(f"Recording {scene.name}…")
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=not headed)
+            try:
+                return _record_scene(browser, options, scene, states.get(scene.user or ""), tmp / scene.name)
+            finally:
+                browser.close()
+
+    with ThreadPoolExecutor(max_workers=jobs) as pool:
+        futures = [pool.submit(work, scene) for scene in scenes]
+        clips: list[Clip] = []
+        for scene, future in zip(scenes, futures, strict=True):
+            try:
+                clips.append(_keep(future.result(), options, scene))
+            except Exception as error:
+                for pending in futures:
+                    pending.cancel()
+                raise RecordingError(scene.name, error, clips) from error
     return clips

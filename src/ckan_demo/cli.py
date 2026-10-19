@@ -191,6 +191,13 @@ def setup(scenario: Path, portal: str | None, api_token: str | None, ckan_ini: P
 @click.option("--scenes", metavar="NAME,…", help="Record only these scenes, in scenario order. [default: all]")
 @click.option("--headed", is_flag=True, help="Show the browser while recording.")
 @click.option(
+    "--jobs",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="Record this many scenes at once (scenarios with independent_scenes=True).",
+)
+@click.option(
     "--transition",
     type=TransitionType(),
     metavar="cut|fade[:S]|crossfade[:S]",
@@ -214,6 +221,7 @@ def record_command(
     captions: bool,
     scenes: str | None,
     headed: bool,
+    jobs: int,
     transition: video.Transition | None,
     gif: bool,
     output: Path | None,
@@ -227,6 +235,9 @@ def record_command(
         )
         selected = loaded.select(scenes.split(",") if scenes else None)
         effect = resolve_transition(transition, loaded, config)
+        if jobs > 1 and not loaded.independent_scenes:
+            click.echo("warning: scenes may depend on each other, recording one at a time", err=True)
+            jobs = 1
         _describe_config(config)
 
         if not no_setup:
@@ -237,7 +248,7 @@ def record_command(
     width, height = size or loaded.size
     options = Options(base_url=site.url, width=width, height=height, captions=captions, speed=speed, output=output_dir)
     try:
-        clips = record(loaded, options, selected, headed=headed, on_scene=click.echo)
+        clips = record(loaded, options, selected, headed=headed, jobs=jobs, on_scene=click.echo)
     except RecordingError as error:
         message = str(error)
         if error.clips:

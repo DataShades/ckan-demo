@@ -154,3 +154,20 @@ def test_transition_flag_is_validated(runner, scenario_file):
 
     assert result.exit_code == 2
     assert "is not a transition" in result.output
+
+
+def test_jobs_fall_back_to_one_without_independent_scenes(runner, scenario_file, monkeypatch):
+    seen = {}
+
+    def fake_record(scenario, options, scenes, **kwargs):
+        seen["jobs"] = kwargs["jobs"]
+        return []
+
+    monkeypatch.setattr("ckan_demo.cli.record", fake_record)
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: target)
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup", "--jobs", "3"])
+
+    assert result.exit_code == 0, result.output
+    assert seen["jobs"] == 1
+    assert "recording one at a time" in result.output

@@ -20,7 +20,7 @@ from ckan_demo import Director, Scenario, Setup, exists
 if TYPE_CHECKING:
     from playwright.sync_api import Locator
 
-scenario = Scenario("Dataset search")
+scenario = Scenario("Dataset search", independent_scenes=True)
 
 DATA = Path(__file__).parent / "data"
 ORG = {

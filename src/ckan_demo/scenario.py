@@ -70,6 +70,7 @@ class Scenario:
     users: dict[str, User] = field(default_factory=dict)
     size: tuple[int, int] = (1920, 1080)  # Full HD
     transition: str | None = None  # "cut", "fade[:s]" or "crossfade[:s]"
+    independent_scenes: bool = False  # scenes don't depend on each other; --jobs may run them together
     scenes: list[Scene] = field(default_factory=list)
     setup_hook: SetupHook | None = None
     setup_local: bool = False

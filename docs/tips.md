@@ -18,6 +18,14 @@
   every pause.
 - Watch it with `--headed` while writing scenes: you see what the camera sees.
 
+## Recording faster
+
+If no scene depends on another (no scene uses data an earlier one created or
+changed), set `Scenario(..., independent_scenes=True)` and record several at
+once with `--jobs 2` or `--jobs 3`. Each scene gets its own browser; the clips
+are joined in scenario order as usual. Scenarios without the flag ignore
+`--jobs` with a warning.
+
 ## A step fails or flickers
 
 - **Wait for what the user waits for.** After an action that loads a page, use

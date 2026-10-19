@@ -17,6 +17,7 @@ scenario = Scenario(
     },
     size=(1920, 1080),                     # video size (the default: Full HD)
     transition="crossfade:0.6",            # between scenes (the default: fade:0.4)
+    independent_scenes=False,              # True lets --jobs record scenes at once
 )
 
 

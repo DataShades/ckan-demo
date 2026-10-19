@@ -83,6 +83,7 @@ uploads; without either (or without permission) it records the portal as it is.
 | `--transition T` | scenario's, config, else `fade:0.4` | between scenes: `cut`, `fade[:seconds]` (through black) or `crossfade[:seconds]` |
 | `--gif` | | also write a GIF (best for short scenes) |
 | `--headed` | | watch the browser while it records |
+| `--jobs N` | `1` | record N scenes at once; only for scenarios with `independent_scenes=True` |
 | `--output DIR` | config, else `demo-output/<title>` | where clips, video and stills go |
 
 ## Configuration

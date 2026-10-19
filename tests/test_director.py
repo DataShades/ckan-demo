@@ -11,6 +11,7 @@ class FakePage:
         self.clock = clock
         self.waits: list[float] = []
         self.captions: list[str | None] = []
+        self.cards: list[list[str] | None] = []
 
     def wait_for_timeout(self, ms):
         self.waits.append(ms / 1000)
@@ -19,6 +20,8 @@ class FakePage:
     def evaluate(self, script, arg=None):
         if "caption" in script:
             self.captions.append(arg)
+        elif "card" in script:
+            self.cards.append(arg)
 
 
 class Clock:
@@ -123,3 +126,27 @@ def test_hold_read_on_hiding_the_caption_does_nothing(clock):
 def test_hold_rejects_other_words(clock):
     with pytest.raises(ValueError, match='"read"'):
         _director(clock).caption("Hi", hold="long")
+
+
+def test_card_stays_up_until_the_next_action(clock):
+    d = _director(clock)
+    page = d._page
+
+    d.card("CKAN", "Find open data", hold=3)
+    d.pause(1)
+
+    assert page.cards == [["CKAN", "Find open data", ""]]  # no pause hides it
+    d.caption("Start with a search")
+    assert page.cards == [["CKAN", "Find open data", ""], None]
+    assert page.waits == [3, 1, 0.5]  # hold, pause, fade out
+
+
+def test_using_the_page_hides_the_card_once(clock):
+    d = _director(clock)
+    page = d._page
+    d.card("", "The end")
+
+    assert d.page is page
+    d.page  # noqa: B018
+
+    assert page.cards == [["", "The end", ""], None]

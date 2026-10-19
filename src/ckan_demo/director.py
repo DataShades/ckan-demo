@@ -41,7 +41,7 @@ class Director:
     """Helpers for one scene. Times are seconds at ``--speed 1``."""
 
     def __init__(self, page: Page, options: Options) -> None:
-        self.page = page
+        self._page = page
         self.options = options
         self.x = options.width / 2
         self.y = options.height / 2
@@ -51,12 +51,19 @@ class Director:
         # Current caption and when it appeared.
         self._caption: str | None = None
         self._caption_shown_at = 0.0
+        self._card_shown = False
+
+    @property
+    def page(self) -> Page:
+        """The Playwright page. Using it hides a title card that's still up."""
+        self._hide_card()
+        return self._page
 
     # ── Pacing and narration ────────────────────────────────────────────────
 
     def pause(self, seconds: float) -> None:
         """Hold still."""
-        self.page.wait_for_timeout(seconds * 1000 / self.options.speed)
+        self._page.wait_for_timeout(seconds * 1000 / self.options.speed)
 
     def caption(self, text: str | None, hold: float | Literal["read"] = 0) -> None:
         """Show a caption (``None`` hides it), then hold.
@@ -68,9 +75,10 @@ class Director:
         if isinstance(hold, str) and hold != "read":
             raise ValueError(f'hold must be a number of seconds or "read", not {hold!r}')
 
+        self._hide_card()
         self.wait_for_reading()
         if self.options.captions:
-            self.page.evaluate("text => window.__demo.caption(text)", text)
+            self._page.evaluate("text => window.__demo.caption(text)", text)
         self._caption = text
         self._caption_shown_at = time.monotonic()
 
@@ -86,14 +94,25 @@ class Director:
         needed = reading_time(self._caption) / self.options.speed
         remaining = needed - (time.monotonic() - self._caption_shown_at)
         if remaining > 0:
-            self.page.wait_for_timeout(remaining * 1000)
+            self._page.wait_for_timeout(remaining * 1000)
 
     def card(self, kicker: str, title: str, text: str = "", hold: float = 3.0) -> None:
-        """Show a full-screen title card for ``hold`` seconds."""
+        """Show a full-screen title card for ``hold`` seconds.
+
+        It stays up until the next action or use of ``d.page``, so a card
+        that ends the scene ends the clip.
+        """
         self.wait_for_reading()
-        self.page.evaluate("([k, t, x]) => window.__demo.card(k, t, x)", [kicker, title, text])
+        self._page.evaluate("([k, t, x]) => window.__demo.card(k, t, x)", [kicker, title, text])
+        self._card_shown = True
         self.pause(hold)
-        self.page.evaluate("() => window.__demo.card()")
+
+    def _hide_card(self) -> None:
+        """Fade out the title card, if one is up."""
+        if not self._card_shown:
+            return
+        self._card_shown = False
+        self._page.evaluate("() => window.__demo.card()")
         self.pause(0.5)
 
     # ── Navigation ──────────────────────────────────────────────────────────
@@ -101,29 +120,31 @@ class Director:
     def goto(self, path: str) -> None:
         """Open a path or URL and wait for the network to go idle."""
         url = path if "://" in path else self.options.base_url + path
-        self.page.goto(url, wait_until="networkidle")
-        self.page.mouse.move(self.x, self.y)
+        self._hide_card()
+        self._page.goto(url, wait_until="networkidle")
+        self._page.mouse.move(self.x, self.y)
         if not self.lead_in:
             self.lead_in = time.monotonic() - self.started
 
     @contextlib.contextmanager
     def navigates(self) -> Iterator[None]:
         """Wrap an action that loads a new page."""
-        with self.page.expect_navigation():
+        with self._page.expect_navigation():
             yield
-        self.page.wait_for_load_state("networkidle")
+        self._page.wait_for_load_state("networkidle")
 
     # ── Pointer and keyboard ────────────────────────────────────────────────
 
     def point(self, locator: Locator) -> None:
         """Move the pointer to the middle of ``locator``."""
+        self._hide_card()
         locator.scroll_into_view_if_needed()
         box = locator.bounding_box()
         if box is None:
             raise AssertionError(f"{locator} is not visible")
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         steps = max(12, min(45, int(math.dist((self.x, self.y), (x, y)) / 14)))
-        self.page.mouse.move(x, y, steps=steps)
+        self._page.mouse.move(x, y, steps=steps)
         self.x, self.y = x, y
         self.pause(0.25)
 
@@ -155,18 +176,19 @@ class Director:
         self.pause(0.6)
 
     def press(self, key: str) -> None:
-        self.page.keyboard.press(key)
+        self._hide_card()
+        self._page.keyboard.press(key)
         self.pause(0.3)
 
     # ── Screenshots ─────────────────────────────────────────────────────────
 
     def screenshot(self, name: str, locator: Locator | None = None) -> Path:
-        """Save ``screenshots/<name>.png`` without the pointer or caption."""
+        """Save ``screenshots/<name>.png`` without the pointer, caption or card."""
         path = self.options.output / "screenshots" / f"{name}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.page.evaluate("() => document.documentElement.classList.add('demo-screenshot')")
+        self._page.evaluate("() => document.documentElement.classList.add('demo-screenshot')")
         try:
-            (locator or self.page).screenshot(path=str(path), animations="disabled")
+            (locator or self._page).screenshot(path=str(path), animations="disabled")
         finally:
-            self.page.evaluate("() => document.documentElement.classList.remove('demo-screenshot')")
+            self._page.evaluate("() => document.documentElement.classList.remove('demo-screenshot')")
         return path

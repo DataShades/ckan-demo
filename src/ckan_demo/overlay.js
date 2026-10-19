@@ -11,6 +11,7 @@
         /* Hidden in screenshots (Director.screenshot). */
         html.demo-screenshot #demo-cursor,
         html.demo-screenshot #demo-caption,
+        html.demo-screenshot #demo-card,
         html.demo-screenshot .demo-ripple { display: none !important; }
 
         #demo-cursor {

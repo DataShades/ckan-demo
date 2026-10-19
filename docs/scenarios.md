@@ -60,10 +60,10 @@ there is time to read. Durations are in seconds at `--speed 1`.
 | `d.point(locator)` | glide to an element without clicking, to draw attention |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
 | `d.caption(text, hold=0)` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read |
-| `d.card(kicker, title, text="", hold=3)` | full-screen title card, then fade out |
+| `d.card(kicker, title, text="", hold=3)` | full-screen title card; it fades out at the next action or use of `d.page`, so a card that ends the scene stays up |
 | `d.pause(seconds)` | hold still |
 | `d.screenshot(name, locator=None)` | save `screenshots/<name>.png` without the overlay |
-| `d.page` | the Playwright `Page`, for everything else |
+| `d.page` | the Playwright `Page`, for everything else. Using it hides a card that is still up |
 
 Locators are ordinary Playwright locators. Prefer what a user sees:
 

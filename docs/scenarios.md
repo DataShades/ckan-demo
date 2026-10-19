@@ -47,8 +47,8 @@ def browse(d: Director) -> None: ...
 ## The Director
 
 Each scene receives a `Director` bound to its page. Its helpers act like a
-person on camera: the pointer glides to its target, typing is key by key, and
-there is time to read. Durations are in seconds at `--speed 1`.
+person on camera: the pointer glides to its target on a slight curve, easing
+in and out, typing is key by key, and there is time to read. Durations are in seconds at `--speed 1`.
 
 | Helper | |
 | --- | --- |

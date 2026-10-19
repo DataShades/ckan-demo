@@ -53,6 +53,41 @@ def key_caps(key: str) -> list[str]:
     return caps
 
 
+def move_duration(distance: float) -> float:
+    """Seconds the pointer takes to travel ``distance`` pixels at ``--speed 1``.
+
+    Grows with the log of the distance, like a hand (Fitts's law): long moves
+    are faster per pixel than short ones.
+    """
+    return 0.2 + 0.1 * math.log2(1 + distance / 50)
+
+
+def pointer_path(start: tuple[float, float], end: tuple[float, float], frames: int) -> list[tuple[float, float]]:
+    """``frames`` points from ``start`` (excluded) to ``end``, as a hand moves.
+
+    The path bows slightly to one side and the pointer speeds up then slows
+    down (a minimum-jerk profile), instead of Playwright's straight line at
+    constant speed. The same move always takes the same path.
+    """
+    (x0, y0), (x1, y1) = start, end
+    dx, dy = x1 - x0, y1 - y0
+    distance = math.hypot(dx, dy)
+    # Control point: off the midpoint, at a right angle to the line. Bowing
+    # by the horizontal direction looks like a wrist pivoting.
+    bow = min(0.12 * distance, 60) * (1 if dx >= 0 else -1)
+    cx, cy = x0 + dx / 2, y0 + dy / 2
+    if distance:
+        cx, cy = cx - dy / distance * bow, cy + dx / distance * bow
+
+    points = []
+    for i in range(1, frames + 1):
+        t = i / frames
+        t = t * t * t * (10 - 15 * t + 6 * t * t)
+        u = 1 - t
+        points.append((u * u * x0 + 2 * u * t * cx + t * t * x1, u * u * y0 + 2 * u * t * cy + t * t * y1))
+    return points
+
+
 CaptionPosition = Literal["bottom", "top", "auto"]
 CAPTION_POSITIONS: tuple[CaptionPosition, ...] = ("bottom", "top", "auto")
 
@@ -72,6 +107,9 @@ class Options:
 
 class Director:
     """Helpers for one scene. Times are seconds at ``--speed 1``."""
+
+    # Pointer positions per second while it moves.
+    FPS = 60
 
     def __init__(self, page: Page, options: Options) -> None:
         self._page = page
@@ -188,10 +226,21 @@ class Director:
         if self._caption and self._caption_position == "auto" and self.options.captions:
             self._page.evaluate("box => window.__demo.avoid(box)", box)
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
-        steps = max(12, min(45, int(math.dist((self.x, self.y), (x, y)) / 14)))
-        self._page.mouse.move(x, y, steps=steps)
-        self.x, self.y = x, y
+        self._move(x, y)
         self.pause(0.25)
+
+    def _move(self, x: float, y: float) -> None:
+        """Move the pointer to ``x, y`` along :func:`pointer_path`, in real time."""
+        duration = move_duration(math.dist((self.x, self.y), (x, y))) / self.options.speed
+        frames = max(2, round(duration * self.FPS))
+        start = time.monotonic()
+        for i, (px, py) in enumerate(pointer_path((self.x, self.y), (x, y), frames), 1):
+            self._page.mouse.move(px, py)
+            # Against the clock, so slow mouse events don't stretch the move.
+            remaining = start + duration * i / frames - time.monotonic()
+            if remaining > 0:
+                self._page.wait_for_timeout(remaining * 1000)
+        self.x, self.y = x, y
 
     def spotlight(self, locator: Locator, hold: float = 2.0, *, padding: int = 8) -> None:
         """Dim everything except ``locator`` for ``hold`` seconds.

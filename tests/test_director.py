@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import itertools
+import math
+
 import pytest
 
 from ckan_demo import director as director_module
-from ckan_demo.director import Director, Options, key_caps, reading_time
+from ckan_demo.director import Director, Options, key_caps, move_duration, pointer_path, reading_time
 
 
 class FakePage:
@@ -17,6 +20,7 @@ class FakePage:
         self.badges: list[list] = []
         self.spotlights: list[list | None] = []
         self.pressed: list[str] = []
+        self.moves: list[tuple[float, float]] = []
         self.mouse = self
         self.keyboard = self
 
@@ -39,7 +43,7 @@ class FakePage:
             self.cards.append(arg)
 
     def move(self, x, y, steps=1):
-        pass
+        self.moves.append((x, y))
 
     def press(self, key):
         self.pressed.append(key)
@@ -285,3 +289,47 @@ def test_spotlight_hides_a_card_first(clock):
     d.spotlight(FakeLocator())
 
     assert d._page.cards[-1] is None
+
+
+def test_pointer_path_ends_on_target_and_eases_in_and_out():
+    path = pointer_path((0, 0), (1000, 0), 30)
+
+    assert len(path) == 30
+    assert path[-1] == pytest.approx((1000, 0))
+    xs = [0] + [x for x, _ in path]
+    steps = [b - a for a, b in itertools.pairwise(xs)]
+    assert all(step > 0 for step in steps)
+    assert steps[0] < steps[15] / 5 and steps[-1] < steps[15] / 5  # slow at both ends
+
+
+def test_pointer_path_bows_a_little_to_one_side():
+    path = pointer_path((0, 0), (1000, 0), 30)
+    off_line = max(abs(y) for _, y in path)
+
+    assert 10 < off_line <= 60
+    assert path == pointer_path((0, 0), (1000, 0), 30)  # the same every time
+
+
+def test_pointer_path_short_and_zero_moves():
+    assert all(point == pytest.approx((5, 5)) for point in pointer_path((5, 5), (5, 5), 3))
+    assert max(abs(y - 5) for _, y in pointer_path((5, 5), (25, 5), 10)) < 3
+
+
+def test_long_moves_take_longer_but_are_faster_per_pixel():
+    assert move_duration(0) == pytest.approx(0.2)
+    assert move_duration(100) < move_duration(1000) < 1
+    assert move_duration(1000) / 1000 < move_duration(100) / 100
+
+
+def test_point_moves_in_real_time_and_follows_speed(clock):
+    d = _director(clock, speed=2)
+    start = (d.x, d.y)
+
+    d.point(FakeLocator())
+
+    target = (BOX["x"] + BOX["width"] / 2, BOX["y"] + BOX["height"] / 2)
+    assert d._page.moves[-1] == pytest.approx(target)
+    assert len(d._page.moves) > 10
+    moving = sum(d._page.waits[:-1])  # the last wait is the pause after
+    assert moving == pytest.approx(move_duration(math.dist(start, target)) / 2)
+    assert (d.x, d.y) == target

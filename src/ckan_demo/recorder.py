@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import shutil
 import tempfile
@@ -13,7 +14,8 @@ from typing import TYPE_CHECKING
 
 from playwright.sync_api import Browser, BrowserContext, sync_playwright
 
-from ckan_demo.director import Director, Options
+from ckan_demo import video
+from ckan_demo.director import Cue, Director, Options
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -27,6 +29,7 @@ OVERLAY = files("ckan_demo").joinpath("overlay.js").read_text()
 class Clip:
     path: Path
     lead_in: float  # loading time at the start, cut when joining
+    cues: tuple[Cue, ...] = ()  # captions, timed like lead_in
 
 
 class RecordingError(Exception):
@@ -85,12 +88,14 @@ def _record_scene(browser: Browser, options: Options, scene: Scene, state: Path 
     try:
         scene.play(director)
         director.wait_for_reading()  # let a final caption be read
+        director.end_cue()
     finally:
         context.close()  # writes the video
 
     if page.video is None:  # pragma: no cover
         raise RuntimeError("Playwright did not record a video")
-    return Clip(Path(page.video.path()), director.lead_in)
+    clip = Clip(Path(page.video.path()), director.lead_in, tuple(director.cues))
+    return video.line_up(clip, director.sync_at) if director.sync_at is not None else clip
 
 
 def record(
@@ -135,7 +140,7 @@ def record(
 def _keep(clip: Clip, options: Options, scene: Scene) -> Clip:
     target = options.output / f"{scene.name}.webm"
     shutil.move(clip.path, target)
-    return Clip(target, clip.lead_in)
+    return dataclasses.replace(clip, path=target)
 
 
 def _record_in_parallel(

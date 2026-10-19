@@ -9,6 +9,8 @@ from click.testing import CliRunner
 from ckan_demo import Scenario, seeding
 from ckan_demo.cli import SizeType, cli, resolve_music, resolve_transition
 from ckan_demo.config import Config, ConfigError
+from ckan_demo.director import Cue
+from ckan_demo.recorder import Clip
 from ckan_demo.video import Transition
 
 SCENARIO = textwrap.dedent(
@@ -256,3 +258,20 @@ def test_music_failure_says_why(runner, scenario_file, monkeypatch, tmp_path):
 
     assert result.exit_code == 1
     assert "(Error opening input files: Invalid data found); the silent video is" in result.output
+
+
+def test_subtitles_are_written_next_to_the_video(runner, scenario_file, monkeypatch, tmp_path):
+    clip = Clip(tmp_path / "triage.webm", 1.0, (Cue(2.0, 4.0, "Assign the ticket"),))
+    (tmp_path / "out").mkdir()  # record() makes it
+    monkeypatch.setattr("ckan_demo.cli.record", lambda *a, **kw: [clip])
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: target)
+    monkeypatch.setattr("ckan_demo.cli.video.duration", lambda path: 10.0)
+
+    result = runner.invoke(
+        cli, ["record", str(scenario_file), "--no-setup", "--no-captions", "--output", str(tmp_path / "out")]
+    )
+
+    assert result.exit_code == 0, result.output
+    vtt = tmp_path / "out" / "issues-demo.vtt"
+    assert f"Subtitles: {vtt}" in result.output
+    assert "00:00:01.000 --> 00:00:03.000\nAssign the ticket" in vtt.read_text()

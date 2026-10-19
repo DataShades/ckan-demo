@@ -1,12 +1,16 @@
-"""Joins clips into one video with ffmpeg, and adds background music."""
+"""Joins clips into one video with ffmpeg, adds background music, and writes
+the captions as subtitles."""
 
 from __future__ import annotations
 
+import dataclasses
+import html
+import itertools
 import re
 import shutil
 import subprocess
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -77,6 +81,23 @@ def duration(video: Path) -> float:
     return float(result.stdout.strip())
 
 
+def _overlap(before: float, after: float, seconds: float) -> float:
+    """A crossfade's length: short clips blend for less."""
+    return min(seconds, before / 2, after / 2)
+
+
+def clip_starts(lengths: Sequence[float], transition: Transition) -> list[float]:
+    """Where each trimmed clip starts in the joined video. A crossfade
+    overlaps a clip with the end of the one before."""
+    starts, total = [], 0.0
+    for index, length in enumerate(lengths):
+        if index and transition.kind == "crossfade":
+            total -= _overlap(lengths[index - 1], length, transition.seconds)
+        starts.append(total)
+        total += length
+    return starts
+
+
 def join_command(
     clips: Sequence[Clip],
     output: Path,
@@ -106,16 +127,15 @@ def join_command(
         filters.append(f"{chain}[v{index}]")
 
     if kind == "crossfade" and len(clips) > 1:
-        # Each blend starts `overlap` seconds before the end so far; short
-        # clips blend for less.
-        joined, total = "[v0]", lengths[0]
+        # Each blend starts where the next clip does.
+        joined, starts = "[v0]", clip_starts(lengths, transition)
         for index in range(1, len(clips)):
-            overlap = min(seconds, lengths[index - 1] / 2, lengths[index] / 2)
+            overlap = _overlap(lengths[index - 1], lengths[index], seconds)
             label = "[out]" if index == len(clips) - 1 else f"[x{index}]"
             filters.append(
-                f"{joined}[v{index}]xfade=transition=fade:duration={overlap:.2f}:offset={total - overlap:.2f}{label}"
+                f"{joined}[v{index}]xfade=transition=fade:duration={overlap:.2f}:offset={starts[index]:.2f}{label}"
             )
-            joined, total = label, total + lengths[index] - overlap
+            joined = label
     else:
         joined = "".join(f"[v{index}]" for index in range(len(clips)))
         filters.append(f"{joined}concat=n={len(clips)}:v=1:a=0[out]")
@@ -168,6 +188,96 @@ def gif_command(video: Path, output: Path, *, width: int = 960, fps: int = 12) -
         "-filter_complex", f"[0:v]{scale},split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer",
         str(output),
     ]  # fmt: skip
+
+
+# ── Sync ─────────────────────────────────────────────────────────────────────
+
+_SYNC_CHROMA = 170
+
+
+def sync_command(clip: Path, *, within: float) -> list[str]:
+    """ffmpeg command printing the chroma of the sync marker's corner for
+    each frame in the first ``within`` seconds."""
+    return [
+        "ffmpeg", "-v", "error", "-t", f"{within:.2f}", "-i", str(clip),
+        "-vf", "crop=16:16:8:8,signalstats,metadata=print:file=-", "-an", "-f", "null", "-",
+    ]  # fmt: skip
+
+
+def find_sync(clip: Path, *, within: float) -> float | None:
+    """When the sync marker first shows in ``clip``, in video seconds."""
+    command = sync_command(clip, within=within)
+    command[0] = _ffmpeg()
+    output = subprocess.run(command, check=True, capture_output=True, text=True).stdout
+    for frame in re.split(r"(?=frame:)", output):
+        time = re.search(r"pts_time:([\d.]+)", frame)
+        u = re.search(r"signalstats\.UAVG=([\d.]+)", frame)
+        v = re.search(r"signalstats\.VAVG=([\d.]+)", frame)
+        if time and u and v and float(u[1]) > _SYNC_CHROMA and float(v[1]) > _SYNC_CHROMA:
+            return float(time[1])
+    return None
+
+
+def line_up(clip: Clip, sync_at: float) -> Clip:
+    """``clip`` with its lead-in and captions on the video's timeline instead
+    of the Director's. They differ by how late the recording started, which
+    is usually a few hundredths of a second but can be a second or more on a
+    busy machine (``--jobs``). Unchanged if the marker isn't found."""
+    try:
+        found = find_sync(clip.path, within=clip.lead_in + 10)
+    except (FfmpegMissing, subprocess.CalledProcessError):
+        return clip
+    if found is None:
+        return clip
+    offset = found - sync_at
+    cues = tuple(dataclasses.replace(cue, start=cue.start + offset, end=cue.end + offset) for cue in clip.cues)
+    return dataclasses.replace(clip, lead_in=max(0.0, clip.lead_in + offset), cues=cues)
+
+
+# ── Subtitles ────────────────────────────────────────────────────────────────
+
+
+MIN_CUE = 0.05  # seconds; anything shorter was never readable
+
+
+def _timestamp(seconds: float) -> str:
+    millis = round(seconds * 1000)
+    hours, millis = divmod(millis, 3_600_000)
+    minutes, millis = divmod(millis, 60_000)
+    return f"{hours:02}:{minutes:02}:{millis // 1000:02}.{millis % 1000:03}"
+
+
+def subtitles(clips: Sequence[Clip], durations: Sequence[float], transition: Transition = DEFAULT_TRANSITION) -> str:
+    """WebVTT for the joined video: each clip's captions, moved to where the
+    clip lands. Captions in a cut lead-in or past a clip's end are trimmed."""
+    lengths = [durations[i] - clip.lead_in for i, clip in enumerate(clips)]
+    cues: list[list[Any]] = []
+    for clip, start, length in zip(clips, clip_starts(lengths, transition), lengths, strict=True):
+        for cue in clip.cues:
+            begin = start + max(0.0, cue.start - clip.lead_in)
+            end = start + min(length, cue.end - clip.lead_in)
+            cues.append([begin, end, cue.text])
+    # Crossfades overlap scenes; the next scene's caption takes over.
+    cues.sort(key=lambda cue: cue[0])
+    for cue, following in itertools.pairwise(cues):
+        cue[1] = min(cue[1], following[0])
+    cues = [cue for cue in cues if cue[1] - cue[0] >= MIN_CUE]
+
+    blocks = ["WEBVTT"]
+    for number, (begin, end, text) in enumerate(cues, start=1):
+        blocks.append(f"{number}\n{_timestamp(begin)} --> {_timestamp(end)}\n{html.escape(text, quote=False)}")
+    return "\n\n".join(blocks) + "\n"
+
+
+def write_subtitles(clips: Sequence[Clip], output: Path, *, transition: Transition = DEFAULT_TRANSITION) -> Path | None:
+    """Write ``output`` (.vtt) if any clip has captions; otherwise remove an
+    old one, so it never describes a different recording."""
+    if not any(clip.cues for clip in clips):
+        output.unlink(missing_ok=True)
+        return None
+    durations = [duration(clip.path) for clip in clips]
+    output.write_text(subtitles(clips, durations, transition), encoding="utf-8")
+    return output
 
 
 def join(clips: Sequence[Clip], output: Path, *, transition: Transition = DEFAULT_TRANSITION) -> Path:

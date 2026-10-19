@@ -6,7 +6,7 @@ import math
 import pytest
 
 from ckan_demo import director as director_module
-from ckan_demo.director import Director, Options, key_caps, move_duration, pointer_path, reading_time
+from ckan_demo.director import Cue, Director, Options, key_caps, move_duration, pointer_path, reading_time
 
 
 class FakePage:
@@ -21,6 +21,7 @@ class FakePage:
         self.spotlights: list[list | None] = []
         self.pressed: list[str] = []
         self.moves: list[tuple[float, float]] = []
+        self.syncs: list[bool] = []
         self.mouse = self
         self.keyboard = self
 
@@ -41,6 +42,11 @@ class FakePage:
             self.avoided.append(arg)
         elif "card" in script:
             self.cards.append(arg)
+        elif "sync" in script:
+            self.syncs.append("true" in script)
+
+    def on(self, event, handler):
+        self.handlers = {**getattr(self, "handlers", {}), event: handler}
 
     def move(self, x, y, steps=1):
         self.moves.append((x, y))
@@ -51,6 +57,9 @@ class FakePage:
     def goto(self, url, wait_until=None):
         self.clock.now += 1.5  # loading
 
+
+# Lead-in after the first goto: the fake page's 1.5 s load, then the sync marker.
+LOADED = 1.5 + Director.SYNC_SECONDS
 
 BOX = {"x": 100, "y": 1000, "width": 80, "height": 30}
 
@@ -196,12 +205,12 @@ def test_card_after_the_first_page_load_opens_the_clip(clock):
     page = d._page
 
     d.goto("/")
-    assert d.lead_in == 1.5
+    assert d.lead_in == pytest.approx(LOADED)
     d.card("", "Find open data", hold=3)
 
     assert page.cards == [["", "Find open data", "", True]]  # no fade-in
-    assert page.waits == [Director.CARD_MARGIN, 3]
-    assert d.lead_in == pytest.approx(1.5 + Director.CARD_MARGIN)  # the page is cut
+    assert page.waits == [Director.SYNC_SECONDS, Director.CARD_MARGIN, 3]
+    assert d.lead_in == pytest.approx(LOADED + Director.CARD_MARGIN)  # the page is cut
 
 
 @pytest.mark.parametrize("before", ["caption", "page", "second card"])
@@ -218,7 +227,7 @@ def test_card_after_anything_else_fades_in(clock, before):
     d.card("", "Find open data", hold=0)
 
     assert d._page.cards[-1] == ["", "Find open data", "", False]
-    assert d.lead_in == pytest.approx(1.5 + (Director.CARD_MARGIN if before == "second card" else 0))
+    assert d.lead_in == pytest.approx(LOADED + (Director.CARD_MARGIN if before == "second card" else 0))
 
 
 def test_using_the_page_hides_the_card_once(clock):
@@ -395,3 +404,65 @@ def test_no_settling_pause_when_nothing_scrolled(clock):
     d.point(FakeLocator())
 
     assert d._page.waits[0] != pytest.approx(0.075)
+
+
+def test_captions_become_cues_timed_from_the_scene_start(clock):
+    d = _director(clock)
+    clock.now += 2
+    d.caption("Start with a search", hold=1)
+    d.pause(3)
+    d.caption("Filter it", hold=1)
+    d.caption(None)
+
+    # Hiding "Filter it" waits until it's been up its 1.8 s reading time.
+    assert d.cues == [Cue(2.0, 6.0, "Start with a search"), Cue(6.0, pytest.approx(7.8), "Filter it")]
+
+
+def test_cues_are_recorded_without_captions_too(clock):
+    d = _director(clock, captions=False)
+    d.caption("Start with a search")
+    d.end_cue()
+
+    assert d.page.captions == []
+    assert [cue.text for cue in d.cues] == ["Start with a search"]
+
+
+def test_a_card_ends_the_cue_it_covers(clock):
+    d = _director(clock)
+    d.caption("Bye", hold=2)
+    d.card("", "The end", hold=3)
+    d.end_cue()  # the scene ends: nothing left open
+
+    assert d.cues == [Cue(0.0, 2.0, "Bye")]
+
+
+def test_end_cue_without_a_caption_does_nothing(clock):
+    d = _director(clock)
+    d.end_cue()
+    d.caption("Once")
+    d.end_cue()
+    d.end_cue()
+
+    assert len(d.cues) == 1
+
+
+def test_a_page_load_ends_the_cue_as_it_wipes_the_caption(clock):
+    d = _director(clock)
+    d.caption("Start with a search")
+    clock.now += 1.2
+    d._page.handlers["domcontentloaded"](d._page)  # the click opened a new page
+    clock.now += 5
+    d.caption("Here's what matches")
+
+    assert d.cues[0] == Cue(0.0, pytest.approx(1.2), "Start with a search")
+    assert [cue.text for cue in d.cues] == ["Start with a search"]  # the next one is still up
+
+
+def test_the_first_page_load_flashes_the_sync_marker_inside_the_lead_in(clock):
+    d = _director(clock)
+    d.goto("/")
+    d.goto("/next")
+
+    assert d.sync_at == pytest.approx(1.5)  # right after loading
+    assert d.lead_in == pytest.approx(d.sync_at + Director.SYNC_SECONDS)  # gone before the cut ends
+    assert d._page.syncs == [True, False]  # once per scene

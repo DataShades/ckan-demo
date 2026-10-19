@@ -93,6 +93,16 @@ CAPTION_POSITIONS: tuple[CaptionPosition, ...] = ("bottom", "top", "auto")
 
 
 @dataclass(frozen=True)
+class Cue:
+    """A caption's text and when it was up, in seconds since the scene began
+    (the clock ``lead_in`` uses)."""
+
+    start: float
+    end: float
+    text: str
+
+
+@dataclass(frozen=True)
 class Options:
     """Settings shared by every scene in a run."""
 
@@ -114,6 +124,8 @@ class Director:
     # Seconds an opening card is up before the clip starts: the video lags
     # the page a little.
     CARD_MARGIN = 0.2
+    # How long the sync marker stays up: several frames at the video's 25 fps.
+    SYNC_SECONDS = 0.3
 
     def __init__(self, page: Page, options: Options) -> None:
         self._page = page
@@ -123,6 +135,8 @@ class Director:
         self.started = time.monotonic()
         # Loading time before the first page; cut when joining.
         self.lead_in = 0.0
+        # When the sync marker showed, for lining the video up with this clock.
+        self.sync_at: float | None = None
         # Current caption and when it appeared.
         self._caption: str | None = None
         self._caption_position: CaptionPosition = "bottom"
@@ -130,6 +144,12 @@ class Director:
         self._card_shown = False
         # Nothing has happened since the first page loaded.
         self._opening = False
+        # Captions shown so far, for subtitles; recorded with --no-captions too.
+        self.cues: list[Cue] = []
+        self._open_cue: tuple[float, str] | None = None  # start and text of the one on screen
+        # A new document starts without the overlay's caption, so its cue ends
+        # there. History updates (htmx boosts) keep the page and the caption.
+        page.on("domcontentloaded", lambda _: self.end_cue())
 
     @property
     def page(self) -> Page:
@@ -165,14 +185,25 @@ class Director:
         self.wait_for_reading()
         if self.options.captions:
             self._page.evaluate("([text, position]) => window.__demo.caption(text, position)", [text, position])
+        self.end_cue()
         self._caption = text
         self._caption_position = position
         self._caption_shown_at = time.monotonic()
+        if text:
+            self._open_cue = (self._caption_shown_at - self.started, text)
 
         if hold == "read":
             hold = reading_time(text) if text else 0
         if hold:
             self.pause(hold)
+
+    def end_cue(self) -> None:
+        """Close the current caption's subtitle: it was replaced, hidden,
+        covered by a card, or the scene ended."""
+        if self._open_cue:
+            start, text = self._open_cue
+            self.cues.append(Cue(start, time.monotonic() - self.started, text))
+            self._open_cue = None
 
     def wait_for_reading(self) -> None:
         """Wait until the current caption has been up for its reading time."""
@@ -191,6 +222,7 @@ class Director:
         ``goto`` opens the clip: it's up from the first frame.
         """
         self.wait_for_reading()
+        self.end_cue()  # the card covers the caption
         # Straight after the first page load, the card appears at once and
         # the clip starts on it, so the page doesn't show before it.
         opening, self._opening = self._opening, False
@@ -221,8 +253,17 @@ class Director:
         self._page.goto(url, wait_until="networkidle")
         self._page.mouse.move(self.x, self.y)
         if not self.lead_in:
+            self._sync()
             self.lead_in = time.monotonic() - self.started
             self._opening = True
+
+    def _sync(self) -> None:
+        """Flash the sync marker, noting when it showed. It's over before the
+        lead-in ends, so it's cut with it."""
+        self._page.evaluate("() => window.__demo.sync(true)")
+        self.sync_at = time.monotonic() - self.started
+        self._page.wait_for_timeout(self.SYNC_SECONDS * 1000)  # a few video frames
+        self._page.evaluate("() => window.__demo.sync(false)")
 
     @contextlib.contextmanager
     def navigates(self) -> Iterator[None]:

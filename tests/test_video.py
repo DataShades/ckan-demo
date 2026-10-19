@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ckan_demo import video
+from ckan_demo.director import Cue
 from ckan_demo.recorder import Clip
 from ckan_demo.video import Transition
 
@@ -115,6 +116,71 @@ def test_without_durations_scenes_are_cut():
     assert "fade" not in graph
 
 
+def test_clip_starts_follow_the_transition():
+    assert video.clip_starts([10.0, 6.0, 8.0], Transition("fade", 0.4)) == [0.0, 10.0, 16.0]
+    assert video.clip_starts([10.0, 6.0, 8.0], Transition("crossfade", 0.6)) == pytest.approx([0.0, 9.4, 14.8])
+    assert video.clip_starts([5.0, 0.8], Transition("crossfade", 0.6)) == pytest.approx([0.0, 4.6])
+
+
+def _cues(vtt: str) -> list[tuple[str, str]]:
+    blocks = vtt.split("\n\n")
+    assert blocks[0] == "WEBVTT"
+    return [(lines[1], lines[2]) for lines in (block.split("\n") for block in blocks[1:])]
+
+
+def test_subtitles_move_each_clips_captions_to_where_it_lands():
+    clips = [
+        Clip(Path("a.webm"), 1.0, (Cue(1.5, 4.0, "Start with a search"),)),
+        Clip(Path("b.webm"), 0.5, (Cue(0.5, 2.5, "Open a dataset"),)),
+    ]
+
+    vtt = video.subtitles(clips, [11.0, 6.5], Transition("crossfade", 0.6))
+
+    # a: 10 s after its 1 s lead-in; b starts 0.6 s before that ends.
+    assert _cues(vtt) == [
+        ("00:00:00.500 --> 00:00:03.000", "Start with a search"),
+        ("00:00:09.400 --> 00:00:11.400", "Open a dataset"),
+    ]
+
+
+def test_subtitles_trim_lead_ins_and_clip_ends_and_never_overlap():
+    clips = [
+        Clip(
+            Path("a.webm"), 2.0, (Cue(0.5, 1.0, "During loading"), Cue(1.0, 3.0, "Straddles"), Cue(9.0, 20.0, "Long"))
+        ),
+        Clip(Path("b.webm"), 0.0, (Cue(0.0, 1.0, "Next"),)),
+    ]
+
+    vtt = video.subtitles(clips, [10.0, 5.0], Transition("crossfade", 1.0))
+
+    # a is 8 s after its lead-in; b starts at 7 s. "Long" would run 7-8 s,
+    # under b's first caption, which takes over.
+    assert _cues(vtt) == [
+        ("00:00:00.000 --> 00:00:01.000", "Straddles"),
+        ("00:00:07.000 --> 00:00:08.000", "Next"),
+    ]
+
+
+def test_subtitle_text_is_escaped_and_hours_are_counted():
+    clip = Clip(Path("a.webm"), 0.0, (Cue(3725.25, 3726.0, "Tom & Jerry <script>"),))
+
+    assert _cues(video.subtitles([clip], [4000.0], Transition("cut", 0.0))) == [
+        ("01:02:05.250 --> 01:02:06.000", "Tom &amp; Jerry &lt;script&gt;")
+    ]
+
+
+def test_write_subtitles_only_with_captions(tmp_path, monkeypatch):
+    monkeypatch.setattr(video, "duration", lambda path: 5.0)
+    target = tmp_path / "demo.vtt"
+    captioned = [Clip(tmp_path / "a.webm", 0.0, (Cue(1.0, 2.0, "Hi"),))]
+
+    assert video.write_subtitles(captioned, target) == target
+    assert "Hi" in target.read_text()
+
+    assert video.write_subtitles([Clip(tmp_path / "a.webm", 0.0)], target) is None
+    assert not target.exists()  # an old file would describe another recording
+
+
 def test_gif_command_scales_and_uses_a_palette():
     graph = _graph(video.gif_command(Path("in.mp4"), Path("out.gif"), width=640))
 
@@ -183,6 +249,42 @@ def test_add_music_matches_the_video_length(tmp_path, song_seconds):
     assert sorted(_streams(clip)) == ["audio", "video"]
     assert video.duration(clip) == pytest.approx(4.0, abs=0.1)
     assert sorted(tmp_path.iterdir()) == sorted([clip, song])  # no leftover partial file
+
+
+def _clip_with_marker(path: Path, at: float | None) -> Path:
+    """A 4 s white WebM like a recorded page, with the sync marker (a magenta
+    corner) from ``at`` for 0.3 s."""
+    marker = f",drawbox=x=0:y=0:w=32:h=32:color=0xff00ff:t=fill:enable='between(t,{at},{at + 0.3})'" if at else ""
+    video.subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=white:s=320x240:r=25:d=4",
+                          "-vf", f"format=yuv420p{marker}", str(path)], check=True)  # fmt: skip
+    return path
+
+
+def test_line_up_moves_the_cut_and_captions_to_the_videos_timeline(tmp_path):
+    _ffmpeg_or_skip()
+    # The Director saw the marker at 0.5 s, the video shows it at 1.5 s: the
+    # recording started a second late, so everything is a second later in it.
+    clip = Clip(_clip_with_marker(tmp_path / "a.webm", 1.5), 0.8, (Cue(1.0, 2.0, "Hi"),))
+
+    lined_up = video.line_up(clip, sync_at=0.5)
+
+    assert lined_up.lead_in == pytest.approx(1.8, abs=0.05)
+    assert lined_up.cues[0].start == pytest.approx(2.0, abs=0.05)
+    assert lined_up.cues[0].end - lined_up.cues[0].start == pytest.approx(1.0)
+
+
+def test_line_up_without_a_marker_leaves_the_clip(tmp_path):
+    _ffmpeg_or_skip()
+    clip = Clip(_clip_with_marker(tmp_path / "a.webm", None), 0.8, (Cue(1.0, 2.0, "Hi"),))
+
+    assert video.line_up(clip, sync_at=0.5) == clip
+
+
+def test_line_up_without_ffmpeg_leaves_the_clip(monkeypatch):
+    monkeypatch.setattr(video.shutil, "which", lambda name: None)
+    clip = Clip(Path("a.webm"), 0.8)
+
+    assert video.line_up(clip, sync_at=0.5) == clip
 
 
 def test_add_music_failure_keeps_the_silent_video(tmp_path):

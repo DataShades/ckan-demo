@@ -64,6 +64,23 @@ leaves wide side margins, so text looks smaller. For demos of small UI
 (forms, dialogs), a smaller 16:9 size such as `--size 1280x720` makes it
 easier to read.
 
+## Subtitles
+
+Every caption is also written to `<scenario>.vtt` (WebVTT) next to the MP4,
+timed to the joined video: lead-ins are cut and crossfades accounted for, as
+in the video. Upload it to YouTube as a caption track, give it to a `<track>`
+element, or translate it. With `--no-captions` nothing is drawn on the page,
+but the subtitles are still written, so viewers can turn captions on and off.
+A run without captions removes an old `.vtt`, so the file always matches the
+video beside it.
+
+Each clip's recording starts a little after its scene does: usually a few
+hundredths of a second, but a second or more on a busy machine, as with
+`--jobs`. So that neither the lead-in cut nor the subtitles drift, the first
+page load flashes a small magenta square in the corner, inside the part that
+is cut, and ckan-demo finds it in the video to measure the difference for
+each clip. Without ffmpeg it can't, and it falls back to the scene's timing.
+
 ## Background music
 
 `--music FILE` (or `music = "..."` in `[tool.ckan-demo]`) lays one track

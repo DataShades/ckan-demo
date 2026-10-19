@@ -196,7 +196,11 @@ def list_command(scenario: Path) -> None:
     show_default=True,
     help="Pace multiplier; 1.3 is 30% faster.",
 )
-@click.option("--captions/--no-captions", default=True, help="Show captions; turn off for a voice-over.")
+@click.option(
+    "--captions/--no-captions",
+    default=True,
+    help="Show captions in the video; turn off for a voice-over. The .vtt subtitles are written either way.",
+)
 @click.option("--scenes", metavar="NAME,…", help="Record only these scenes, in scenario order. [default: all]")
 @click.option("--headed", is_flag=True, help="Show the browser while recording.")
 @click.option(
@@ -301,6 +305,9 @@ def record_command(
                 f"cannot add music from {soundtrack}{reason}; the silent video is {target}"
             ) from error
     click.echo(f"Video: {target}")
+    vtt = video.write_subtitles(clips, target.with_suffix(".vtt"), transition=effect)
+    if vtt:
+        click.echo(f"Subtitles: {vtt}")
 
     if gif:
         click.echo(f"GIF:   {video.to_gif(target, target.with_suffix('.gif'))}")

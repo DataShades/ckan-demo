@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from ckan_demo import Scenario, recorder
-from ckan_demo.director import Options
+from ckan_demo.director import Cue, Options
 from ckan_demo.recorder import Clip, RecordingError
 
 
@@ -43,7 +43,7 @@ def fake_playwright(monkeypatch, tmp_path):
         video_dir.mkdir(parents=True, exist_ok=True)
         path = video_dir / "clip.webm"
         path.write_text(scene.name)
-        return Clip(path, 0.1)
+        return Clip(path, 0.1, (Cue(0.5, 2.0, scene.name),))
 
     monkeypatch.setattr(recorder, "sync_playwright", fake_sync_playwright)
     monkeypatch.setattr(recorder, "_record_scene", fake_record_scene)
@@ -77,6 +77,7 @@ def test_sequential_by_default(fake_playwright, tmp_path):
     clips = recorder.record(scenario, _options(tmp_path), scenario.scenes, on_scene=lambda line: None)
 
     assert [clip.path.name for clip in clips] == ["a.webm", "b.webm"]
+    assert [clip.cues[0].text for clip in clips] == ["a", "b"]  # kept when moved to the output
     assert len(fake_playwright) == 1
 
 

@@ -78,7 +78,7 @@ uploads; without either (or without permission) it records the portal as it is.
 | `--scenes a,b` | all | record only these scenes (in scenario order) |
 | `--size WxH` | scenario's (`1920x1080`) | video size |
 | `--speed X` | `1.0` | pace; `1.3` is 30% faster |
-| `--no-captions` | | for a voice-over |
+| `--no-captions` | | for a voice-over; the `.vtt` subtitles are still written |
 | `--transition T` | scenario's, config, else `fade:0.4` | between scenes: `cut`, `fade[:seconds]` (through black) or `crossfade[:seconds]` |
 | `--music FILE` | config | background music for the whole video: looped or cut to fit, faded in and out |
 | `--music-volume DB` | config, else `-12` | music level in dB |

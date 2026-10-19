@@ -15,7 +15,8 @@
         html.demo-screenshot #demo-card,
         html.demo-screenshot #demo-keys,
         html.demo-screenshot #demo-spotlight,
-        html.demo-screenshot .demo-ripple { display: none !important; }
+        html.demo-screenshot .demo-ripple,
+        html.demo-screenshot #demo-sync { display: none !important; }
 
         #demo-cursor {
             position: fixed; z-index: 2147483647; left: 0; top: 0;
@@ -309,6 +310,21 @@
                 card.style.transition = "";
             }
             card.classList.add("shown");
+        },
+        // The sync marker: a magenta square in the top left corner that the
+        // recorder finds in the video to line it up with the Director's
+        // clock. Resolves once a frame with (or without) it has been painted.
+        sync(on) {
+            document.getElementById("demo-sync")?.remove();
+            if (on) {
+                const marker = document.createElement("div");
+                marker.id = "demo-sync";
+                marker.style.cssText =
+                    "position:fixed;z-index:2147483647;left:0;top:0;width:32px;height:32px;" +
+                    "background:#f0f;pointer-events:none";
+                document.body.appendChild(marker);
+            }
+            return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         },
     };
 

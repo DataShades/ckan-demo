@@ -15,6 +15,7 @@ class FakePage:
         self.avoided: list[dict] = []
         self.cards: list[list[str] | None] = []
         self.badges: list[list] = []
+        self.spotlights: list[list | None] = []
         self.pressed: list[str] = []
         self.mouse = self
         self.keyboard = self
@@ -28,6 +29,8 @@ class FakePage:
             text, position = arg
             self.captions.append(text)
             self.positions.append(position)
+        elif "spotlight" in script:
+            self.spotlights.append(arg)
         elif "keys" in script:
             self.badges.append(arg)
         elif "avoid" in script:
@@ -264,3 +267,21 @@ def test_badges_show_without_captions_too(clock):
     d.press("Control+Enter")
 
     assert d._page.badges
+
+
+def test_spotlight_dims_around_the_element_then_lifts(clock):
+    d = _director(clock, speed=2)
+
+    d.spotlight(FakeLocator(), hold=3, padding=12)
+
+    assert d._page.spotlights == [[BOX, 12], None]
+    assert d._page.waits == [1.5, 0.2]  # the hold, then the fade-out
+
+
+def test_spotlight_hides_a_card_first(clock):
+    d = _director(clock)
+    d.card("", "Title", hold=0)
+
+    d.spotlight(FakeLocator())
+
+    assert d._page.cards[-1] is None

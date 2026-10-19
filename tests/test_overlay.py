@@ -125,3 +125,34 @@ def test_key_badge_without_a_caption_sits_at_the_bottom(director):
 
     assert _keys(director)["shown"]
     assert director._page.eval_on_selector("#demo-keys", "el => getComputedStyle(el).bottom") == "40px"
+
+
+def _spotlight(d: Director) -> dict:
+    return d._page.eval_on_selector(
+        "#demo-spotlight",
+        "el => ({shown: el.classList.contains('shown'), box: el.getBoundingClientRect().toJSON()})",
+    )
+
+
+def test_spotlight_frames_the_element_and_fades(director):
+    page = director._page
+    target = page.locator("#high")
+    box = target.bounding_box()
+    page.evaluate("box => window.__demo.spotlight(box, 8)", box)
+
+    spot = _spotlight(director)
+    assert spot["shown"]
+    assert spot["box"]["x"] == pytest.approx(box["x"] - 8)
+    assert spot["box"]["width"] == pytest.approx(box["width"] + 16)
+
+    director.spotlight(target, hold=0.5)
+
+    assert not _spotlight(director)["shown"]
+
+
+def test_spotlight_stays_under_the_caption_and_pointer(director):
+    z = director._page.evaluate(
+        "() => ['#demo-spotlight', '#demo-caption', '#demo-cursor'].map("
+        "s => +getComputedStyle(document.querySelector(s)).zIndex)"
+    )
+    assert z[0] < z[1] < z[2]

@@ -58,6 +58,7 @@ there is time to read. Durations are in seconds at `--speed 1`.
 | `d.select(locator, value=..., label=...)` | choose an option in a native `<select>` |
 | `d.press(key, badge=None)` | press a key (`"Enter"`, `"Escape"`, `"Control+Enter"`). Shortcuts show a key badge (<kbd>Ctrl</kbd> + <kbd>Enter</kbd>) next to the caption just before the press; `badge=True` or `False` turns it on or off for any key |
 | `d.point(locator)` | glide to an element without clicking, to draw attention |
+| `d.spotlight(locator, hold=2, padding=8)` | dim the rest of the page around an element for `hold` seconds, to say "look here". The pointer and caption stay on top |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
 | `d.caption(text, hold=0, position="bottom")` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read. `position=` is `"bottom"`, `"top"` or `"auto"` (see below) |
 | `d.card(kicker, title, text="", hold=3)` | full-screen title card; it fades out at the next action or use of `d.page`, so a card that ends the scene stays up |

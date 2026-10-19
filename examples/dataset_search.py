@@ -155,7 +155,7 @@ def dataset(d: Director) -> None:
         count = resources.count()
         d.caption(f"This one has {count} resource{'s' if count != 1 else ''}, the actual data", hold="read")
         d.point(resources.first)
-        d.pause(1.5)
+        d.spotlight(resources.first, hold=2)
 
         resource_link = first(resources.first.locator("a.heading, a[href*='/resource/']"))
         if resource_link:

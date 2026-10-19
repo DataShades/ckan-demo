@@ -193,6 +193,22 @@ class Director:
         self.x, self.y = x, y
         self.pause(0.25)
 
+    def spotlight(self, locator: Locator, hold: float = 2.0, *, padding: int = 8) -> None:
+        """Dim everything except ``locator`` for ``hold`` seconds.
+
+        The pointer and caption stay on top. Nothing on the page moves, so a
+        caption shown before it reads alongside.
+        """
+        self._hide_card()
+        locator.scroll_into_view_if_needed()
+        box = locator.bounding_box()
+        if box is None:
+            raise AssertionError(f"{locator} is not visible")
+        self._page.evaluate("([box, padding]) => window.__demo.spotlight(box, padding)", [box, padding])
+        self.pause(hold)
+        self._page.evaluate("() => window.__demo.spotlight(null)")
+        self.pause(0.4)  # the fade-out
+
     def click(self, locator: Locator) -> None:
         self.point(locator)
         locator.click()

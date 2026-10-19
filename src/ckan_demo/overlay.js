@@ -1,7 +1,7 @@
 /**
  * Injected into every page: a pointer and click ripples (Playwright's video
- * has none), the caption bar, key badges, title cards, and CSS hiding CKAN's
- * dev chrome.
+ * has none), the caption bar, key badges, title cards, the spotlight, and CSS
+ * hiding CKAN's dev chrome.
  */
 (() => {
     if (window.__demo) return;
@@ -14,6 +14,7 @@
         html.demo-screenshot #demo-caption,
         html.demo-screenshot #demo-card,
         html.demo-screenshot #demo-keys,
+        html.demo-screenshot #demo-spotlight,
         html.demo-screenshot .demo-ripple { display: none !important; }
 
         #demo-cursor {
@@ -66,6 +67,15 @@
             box-shadow: inset 0 -3px 0 #cbd5e1;
         }
 
+        /* A hole over the element; its shadow dims the rest of the page. */
+        #demo-spotlight {
+            position: fixed; z-index: 2147483643; left: 0; top: 0; width: 0; height: 0;
+            border-radius: 10px; pointer-events: none;
+            box-shadow: 0 0 0 200vmax rgba(15, 23, 42, 0.6);
+            opacity: 0; transition: opacity 0.35s ease;
+        }
+        #demo-spotlight.shown { opacity: 1; }
+
         #demo-card {
             position: fixed; z-index: 2147483644; inset: 0;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -86,7 +96,7 @@
                   fill="#111827" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
         </svg>`;
 
-    let cursor, caption, keys, card;
+    let cursor, caption, keys, card, spotlight;
     let keysHide = null;  // pending fade-out of the key badge
     let pointer = null;  // last pointer position
     let captionMode = "bottom";  // "top", "bottom" or "auto"
@@ -106,7 +116,9 @@
         keys.id = "demo-keys";
         card = document.createElement("div");
         card.id = "demo-card";
-        document.body.append(cursor, caption, keys, card);
+        spotlight = document.createElement("div");
+        spotlight.id = "demo-spotlight";
+        document.body.append(cursor, caption, keys, card, spotlight);
 
         // Restore the pointer position from the previous page.
         const last = JSON.parse(sessionStorage.getItem("demo-cursor") || "null");
@@ -219,6 +231,21 @@
             }
             keys.classList.add("shown");
             keysHide = setTimeout(() => keys.classList.remove("shown"), ms);
+        },
+        // Dim everything but `box` (viewport pixels), `padding` px around it;
+        // no box fades the dimming out.
+        spotlight(box, padding = 8) {
+            if (!box) {
+                spotlight.classList.remove("shown");
+                return;
+            }
+            Object.assign(spotlight.style, {
+                left: box.x - padding + "px",
+                top: box.y - padding + "px",
+                width: box.width + 2 * padding + "px",
+                height: box.height + 2 * padding + "px",
+            });
+            spotlight.classList.add("shown");
         },
         card(kicker, title, text) {
             if (!title) {

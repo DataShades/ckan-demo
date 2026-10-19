@@ -191,6 +191,11 @@
         }, 300);
     }
 
+    // ── Scrolling ────────────────────────────────────────────────────────
+
+    // Ease in and out, like the pointer (minimum jerk).
+    const ease = (t) => t * t * t * (10 - 15 * t + 6 * t * t);
+
     window.__demo = {
         caption(text, position = "bottom") {
             if (!text) {
@@ -246,6 +251,35 @@
                 height: box.height + 2 * padding + "px",
             });
             spotlight.classList.add("shown");
+        },
+        // Scroll the page so `el` is centred, smoothly, unless it's already in
+        // view. Resolves with the pixels scrolled once the page is still.
+        // `scroll-behavior: smooth` (Bootstrap sets it) is bypassed, so
+        // timing is ours and follows `speed`.
+        reveal(el, speed = 1) {
+            const rect = el.getBoundingClientRect();
+            const height = window.innerHeight;
+            if (rect.top >= 0 && rect.bottom <= height) return Promise.resolve(0);
+
+            const from = window.scrollY;
+            const max = document.documentElement.scrollHeight - height;
+            // Centred, or the top just below the edge if it's taller than the view.
+            const offset = rect.height > height - 160 ? rect.top - 80 : rect.top + rect.height / 2 - height / 2;
+            const to = Math.max(0, Math.min(max, from + offset));
+            const distance = Math.abs(to - from);
+            if (distance < 1) return Promise.resolve(0);
+
+            const ms = (350 + 150 * Math.log2(1 + distance / 200)) / speed;
+            return new Promise((resolve) => {
+                const start = performance.now();
+                const step = (now) => {
+                    const t = Math.min(1, (now - start) / ms);
+                    window.scrollTo({ top: from + (to - from) * ease(t), behavior: "instant" });
+                    if (t < 1) requestAnimationFrame(step);
+                    else requestAnimationFrame(() => resolve(distance));
+                };
+                requestAnimationFrame(step);
+            });
         },
         card(kicker, title, text) {
             if (!title) {

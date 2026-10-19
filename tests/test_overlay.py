@@ -156,3 +156,56 @@ def test_spotlight_stays_under_the_caption_and_pointer(director):
         "s => +getComputedStyle(document.querySelector(s)).zIndex)"
     )
     assert z[0] < z[1] < z[2]
+
+
+TALL_PAGE = """
+<html style="scroll-behavior: smooth">
+<body style="margin:0">
+  <button id="top" style="height:40px">Top</button>
+  <div style="height:3000px"></div>
+  <button id="far" style="height:40px">Far</button>
+  <div style="height:1000px"></div>
+</body>
+</html>
+"""
+
+
+@pytest.fixture
+def tall(chromium):
+    page = chromium.new_page(viewport={"width": 1280, "height": 720})
+    page.set_content(TALL_PAGE)
+    page.add_script_tag(content=OVERLAY)
+    yield page
+    page.close()
+
+
+def test_reveal_scrolls_gradually_and_centres(tall):
+    far = tall.locator("#far")
+
+    mid, end = far.evaluate(
+        """async el => {
+            const done = window.__demo.reveal(el, 1);
+            await new Promise(r => setTimeout(r, 250));
+            const mid = window.scrollY;
+            await done;
+            return [mid, window.scrollY];
+        }"""
+    )
+
+    assert 0 < mid < end  # moving, not a jump
+    box = far.bounding_box()
+    assert box["y"] + box["height"] / 2 == pytest.approx(360, abs=2)
+
+
+def test_reveal_leaves_visible_elements_alone(tall):
+    assert tall.locator("#top").evaluate("el => window.__demo.reveal(el, 1)") == 0
+    assert tall.evaluate("() => window.scrollY") == 0
+
+
+def test_point_reveals_before_moving(tall):
+    d = Director(tall, Options(base_url="http://x", width=1280, height=720, speed=10))
+
+    d.point(tall.locator("#far"))
+
+    assert tall.evaluate("() => window.scrollY") > 2000
+    assert d.y == pytest.approx(360, abs=2)

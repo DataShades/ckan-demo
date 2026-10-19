@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from playwright.sync_api import Locator, Page
+    from playwright.sync_api import FloatRect, Locator, Page
 
 
 def reading_time(text: str) -> float:
@@ -219,15 +219,24 @@ class Director:
     def point(self, locator: Locator) -> None:
         """Move the pointer to the middle of ``locator``."""
         self._hide_card()
-        locator.scroll_into_view_if_needed()
-        box = locator.bounding_box()
-        if box is None:
-            raise AssertionError(f"{locator} is not visible")
+        box = self._reveal(locator)
         if self._caption and self._caption_position == "auto" and self.options.captions:
             self._page.evaluate("box => window.__demo.avoid(box)", box)
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         self._move(x, y)
         self.pause(0.25)
+
+    def _reveal(self, locator: Locator) -> FloatRect:
+        """Scroll ``locator`` into view smoothly and return its box."""
+        locator.wait_for(state="visible")
+        if locator.evaluate("(el, speed) => window.__demo.reveal(el, speed)", self.options.speed):
+            self.pause(0.15)  # settle before the pointer moves
+        # Instant fallback for scrolling boxes inside the page, like dialogs.
+        locator.scroll_into_view_if_needed()
+        box = locator.bounding_box()
+        if box is None:
+            raise AssertionError(f"{locator} is not visible")
+        return box
 
     def _move(self, x: float, y: float) -> None:
         """Move the pointer to ``x, y`` along :func:`pointer_path`, in real time."""
@@ -249,10 +258,7 @@ class Director:
         caption shown before it reads alongside.
         """
         self._hide_card()
-        locator.scroll_into_view_if_needed()
-        box = locator.bounding_box()
-        if box is None:
-            raise AssertionError(f"{locator} is not visible")
+        box = self._reveal(locator)
         self._page.evaluate("([box, padding]) => window.__demo.spotlight(box, padding)", [box, padding])
         self.pause(hold)
         self._page.evaluate("() => window.__demo.spotlight(null)")

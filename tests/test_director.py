@@ -53,6 +53,17 @@ BOX = {"x": 100, "y": 1000, "width": 80, "height": 30}
 
 
 class FakeLocator:
+    def __init__(self, scrolled=0):
+        self.scrolled = scrolled  # what the page's reveal() reports
+        self.reveals: list = []
+
+    def wait_for(self, state):
+        pass
+
+    def evaluate(self, script, arg):
+        self.reveals.append(arg)
+        return self.scrolled
+
     def scroll_into_view_if_needed(self):
         pass
 
@@ -333,3 +344,21 @@ def test_point_moves_in_real_time_and_follows_speed(clock):
     moving = sum(d._page.waits[:-1])  # the last wait is the pause after
     assert moving == pytest.approx(move_duration(math.dist(start, target)) / 2)
     assert (d.x, d.y) == target
+
+
+def test_point_scrolls_smoothly_at_the_runs_speed(clock):
+    d = _director(clock, speed=2)
+    locator = FakeLocator(scrolled=800)
+
+    d.point(locator)
+
+    assert locator.reveals == [2]
+    assert d._page.waits[0] == pytest.approx(0.075)  # settling after the scroll
+
+
+def test_no_settling_pause_when_nothing_scrolled(clock):
+    d = _director(clock, speed=2)
+
+    d.point(FakeLocator())
+
+    assert d._page.waits[0] != pytest.approx(0.075)

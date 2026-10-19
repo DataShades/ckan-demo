@@ -49,6 +49,25 @@ If the run lacks what the scenario needs, `record` warns and records the portal
 as it is, and `setup` stops with an error. `ckan-demo list` shows which way a
 scenario seeds.
 
+### Optional seeding
+
+When the scenes work with whatever the portal has, and seeding only makes the
+video show known content, mark the hook optional:
+
+```python
+@scenario.setup(optional=True)
+def seed(setup: Setup) -> None: ...
+```
+
+Then `record` doesn't stop when seeding can't run or fails part-way: no token
+(or ckan.ini), a token without permission (`NotAuthorized`, e.g. on someone
+else's portal), CKAN rejecting the data, or the portal not answering. It prints
+one line saying why and records the portal as it is. Anything already created
+before the failure stays; keep the hook idempotent so the next run picks up
+from there. Bugs in the hook itself (a typo, a missing file) still stop the
+run. [`examples/dataset_search.py`](../examples/dataset_search.py) works this
+way.
+
 ### The `Setup` object
 
 | | |
@@ -113,8 +132,6 @@ def prepare(setup: Setup) -> None:
     )
 ```
 
-[`examples/factories_seed.py`](../examples/factories_seed.py) is a complete,
-working example.
 
 ## Reusing your extension's test code
 

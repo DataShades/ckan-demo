@@ -28,7 +28,7 @@ else:  # pragma: no cover
 
 TABLE = "ckan-demo"
 _PATH_KEYS = {"ckan-ini", "output"}
-_STRING_KEYS = {"portal"}
+_STRING_KEYS = {"portal", "transition"}
 
 
 class ConfigError(Exception):
@@ -43,6 +43,7 @@ class Config:
     portal: str | None = None
     ckan_ini: Path | None = None
     output: Path | None = None
+    transition: str | None = None
     keys: frozenset[str] = field(default_factory=frozenset)
 
 
@@ -89,5 +90,6 @@ def load_config(scenario_path: Path) -> Config:
         portal=table.get("portal"),
         ckan_ini=path("ckan-ini"),
         output=path("output"),
+        transition=table.get("transition"),
         keys=frozenset(table),
     )

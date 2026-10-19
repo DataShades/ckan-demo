@@ -16,6 +16,7 @@ scenario = Scenario(
         "staff": User("anna-support", fullname="Anna Lindqvist", sysadmin=True),
     },
     size=(1920, 1080),                     # video size (the default: Full HD)
+    transition="crossfade:0.6",            # between scenes (the default: fade:0.4)
 )
 
 
@@ -57,7 +58,7 @@ there is time to read. Durations are in seconds at `--speed 1`.
 | `d.press(key)` | press a key (`"Enter"`, `"Escape"`, `"Control+Enter"`) |
 | `d.point(locator)` | glide to an element without clicking, to draw attention |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
-| `d.caption(text, hold=0)` | show a caption bar; `None` hides it |
+| `d.caption(text, hold=0)` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read |
 | `d.card(kicker, title, text="", hold=3)` | full-screen title card, then fade out |
 | `d.pause(seconds)` | hold still |
 | `d.screenshot(name, locator=None)` | save `screenshots/<name>.png` without the overlay |
@@ -104,8 +105,22 @@ expect(d.page.locator(".message-card")).to_have_count(1)
 
 Write captions as short, plain sentences about what the viewer gets, not what
 the script does: "New requests wait in Unassigned", not "Click the
-Unassigned tab". Give each one time: `hold=2.5` to `3.5` for a sentence. Use
-cards to open the video and to mark a change of person or topic.
+Unassigned tab". You don't need to time them: a caption stays on screen until
+it could be read (about 0.6 s plus a third of a second per word, at least
+1.8 s), and time spent on clicks and typing counts towards it.
+
+To have the viewer read a caption *before* the next action starts, hold the
+page still for its reading time with `hold="read"`; it follows the wording
+and `--speed`, so there are no numbers to keep in sync. Use `hold=<seconds>`
+for a deliberate longer look, e.g. at a page of results:
+
+```python
+d.caption("Use the filters on the left to narrow it down", hold="read")
+d.click(facet)
+d.caption(f"Here's what matches “{term}”", hold=3)
+```
+
+Use cards to open the video and to mark a change of person or topic.
 
 Record without captions (`--no-captions`) when you will narrate.
 

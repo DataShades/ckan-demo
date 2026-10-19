@@ -54,11 +54,10 @@ ckan-demo record demo.py --portal http://127.0.0.1:5000
 # Video: demo-output/dataset-search/dataset-search.mp4
 ```
 
-[`examples/dataset_search.py`](examples/dataset_search.py) needs no users or
-token at all; try it against any CKAN site.
-[`examples/factories_seed.py`](examples/factories_seed.py) seeds an
-organisation and a dataset in-process with CKAN's factories
-(`--ckan-ini`, no token).
+[`examples/dataset_search.py`](examples/dataset_search.py) works on any CKAN
+site as an anonymous visitor. With a sysadmin's API token it first seeds an
+organisation and two datasets with real CSV uploads; without one (or without
+permission) it records the portal as it is.
 
 ## Commands
 
@@ -81,6 +80,7 @@ organisation and a dataset in-process with CKAN's factories
 | `--size WxH` | scenario's (`1920x1080`) | video size |
 | `--speed X` | `1.0` | pace; `1.3` is 30% faster |
 | `--no-captions` | | for a voice-over |
+| `--transition T` | scenario's, config, else `fade:0.4` | between scenes: `cut`, `fade[:seconds]` (through black) or `crossfade[:seconds]` |
 | `--gif` | | also write a GIF (best for short scenes) |
 | `--headed` | | watch the browser while it records |
 | `--output DIR` | config, else `demo-output/<title>` | where clips, video and stills go |
@@ -95,6 +95,7 @@ project's `pyproject.toml` (the nearest one above the scenario file):
 portal = "http://127.0.0.1:5000"
 output = "demo/output"
 ckan-ini = "../config/ckan.ini"
+transition = "crossfade:0.6"
 ```
 
 - Paths are relative to that `pyproject.toml`.

@@ -1,0 +1,10 @@
+station,city,date,pm25_ugm3,pm10_ugm3,no2_ugm3
+Shevchenkivskyi,Kyiv,2026-03-01,14.2,22.8,31.5
+Shevchenkivskyi,Kyiv,2026-03-02,18.9,29.4,36.1
+Shevchenkivskyi,Kyiv,2026-03-03,11.6,19.0,27.3
+Pozniaky,Kyiv,2026-03-01,16.8,26.1,34.0
+Pozniaky,Kyiv,2026-03-02,21.3,33.7,39.8
+Pozniaky,Kyiv,2026-03-03,13.0,21.5,29.9
+Center,Lviv,2026-03-01,9.4,15.2,18.6
+Center,Lviv,2026-03-02,10.1,16.8,20.2
+Center,Lviv,2026-03-03,8.7,14.1,17.4

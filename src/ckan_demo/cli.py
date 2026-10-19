@@ -10,12 +10,11 @@ from typing import Any, TypeVar
 
 import click
 import requests
-from ckanapi.errors import CKANAPIError
 
 from ckan_demo import __version__, seeding, video
 from ckan_demo.config import Config, ConfigError, load_config
 from ckan_demo.director import Options
-from ckan_demo.portal import Portal, PortalError
+from ckan_demo.portal import ACTION_ERRORS, Portal, PortalError
 from ckan_demo.recorder import RecordingError, record
 from ckan_demo.scenario import Scenario, ScenarioError, load_scenario
 
@@ -40,6 +39,33 @@ class SizeType(click.ParamType):
         return int(match[1]), int(match[2])
 
 
+class TransitionType(click.ParamType):
+    """``cut``, ``fade[:seconds]`` or ``crossfade[:seconds]``."""
+
+    name = "transition"
+
+    def convert(self, value: Any, param: click.Parameter | None, ctx: click.Context | None) -> video.Transition:
+        if isinstance(value, video.Transition):
+            return value
+        try:
+            return video.Transition.parse(str(value))
+        except ValueError as error:
+            self.fail(str(error), param, ctx)
+
+
+def resolve_transition(flag: video.Transition | None, scenario: Scenario, config: Config) -> video.Transition:
+    """Command line, then the scenario, then ``[tool.ckan-demo]``, then the default."""
+    if flag is not None:
+        return flag
+    for source, value in (("the scenario", scenario.transition), (f"{config.source}", config.transition)):
+        if value:
+            try:
+                return video.Transition.parse(value)
+            except ValueError as error:
+                raise ConfigError(f"{source}: {error}") from error
+    return video.DEFAULT_TRANSITION
+
+
 @contextlib.contextmanager
 def _clean_errors() -> Iterator[None]:
     """Report the tool's own errors as one line, not a traceback."""
@@ -47,7 +73,7 @@ def _clean_errors() -> Iterator[None]:
         yield
     except (ScenarioError, PortalError, ConfigError) as error:
         raise click.ClickException(str(error)) from error
-    except CKANAPIError as error:
+    except ACTION_ERRORS as error:
         raise click.ClickException(f"CKAN: {type(error).__name__}: {error}") from error
     except requests.RequestException as error:
         raise click.ClickException(f"cannot reach the portal: {error}") from error
@@ -131,7 +157,8 @@ def list_command(scenario: Path) -> None:
         _describe_config(config)
     if loaded.setup_hook:
         how = "in-process" if loaded.setup_in_process else "through the API"
-        click.echo(f"\nSeeding: {how} (needs {seeding.requirements(loaded)})")
+        optional = ", optional" if loaded.setup_optional else ""
+        click.echo(f"\nSeeding: {how}{optional} (needs {seeding.requirements(loaded)})")
     click.echo("\nUsers:")
     for key, user in loaded.users.items():
         click.echo(f"  {key:12} {user.name}{' (sysadmin)' if user.sysadmin else ''}")
@@ -167,6 +194,12 @@ def setup(scenario: Path, portal: str | None, api_token: str | None, ckan_ini: P
 @click.option("--captions/--no-captions", default=True, help="Show captions; turn off for a voice-over.")
 @click.option("--scenes", metavar="NAME,…", help="Record only these scenes, in scenario order. [default: all]")
 @click.option("--headed", is_flag=True, help="Show the browser while recording.")
+@click.option(
+    "--transition",
+    type=TransitionType(),
+    metavar="cut|fade[:S]|crossfade[:S]",
+    help="Between scenes. [default: the scenario's, config transition, or fade:0.4]",
+)
 @click.option("--gif", is_flag=True, help="Also write a GIF next to the MP4.")
 @click.option(
     "--output",
@@ -185,6 +218,7 @@ def record_command(
     captions: bool,
     scenes: str | None,
     headed: bool,
+    transition: video.Transition | None,
     gif: bool,
     output: Path | None,
 ) -> None:
@@ -196,15 +230,13 @@ def record_command(
             loaded, config, portal=portal, api_token=api_token, ckan_ini=ckan_ini, output=output
         )
         selected = loaded.select(scenes.split(",") if scenes else None)
+        effect = resolve_transition(transition, loaded, config)
         _describe_config(config)
 
-        if no_setup:
-            pass
-        elif seeding.can_seed(loaded, site):
-            click.echo("Preparing data…")
-            seeding.run_setup(loaded, site, reset=reset, log=click.echo)
-        elif loaded.setup_hook or loaded.users or reset:
-            click.echo(f"warning: skipping data setup, it needs {seeding.requirements(loaded)}", err=True)
+        if not no_setup:
+            seeding.seed_before_recording(
+                loaded, site, reset=reset, log=click.echo, warn=lambda line: click.echo(line, err=True)
+            )
 
     width, height = size or loaded.size
     options = Options(base_url=site.url, width=width, height=height, captions=captions, speed=speed, output=output_dir)
@@ -218,7 +250,7 @@ def record_command(
 
     target = output_dir / f"{loaded.slug}.mp4"
     try:
-        video.join(clips, target)
+        video.join(clips, target, transition=effect)
     except video.FfmpegMissing as error:
         click.echo(f"{error}. The scenes are in {output_dir}/ as .webm files.")
         return

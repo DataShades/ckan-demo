@@ -76,9 +76,11 @@ class Scenario:
     title: str
     users: dict[str, User] = field(default_factory=dict)
     size: tuple[int, int] = (1920, 1080)  # Full HD
+    transition: str | None = None  # between scenes: "cut", "fade[:s]", "crossfade[:s]"
     scenes: list[Scene] = field(default_factory=list)
     setup_hook: SetupHook | None = None
     setup_in_process: bool = False
+    setup_optional: bool = False
 
     def scene(
         self, name: str, *, user: str | None = None
@@ -107,10 +109,10 @@ class Scenario:
     def setup(self, hook: SetupHook, /) -> SetupHook: ...
 
     @overload
-    def setup(self, *, in_process: bool = False) -> Callable[[SetupHook], SetupHook]: ...
+    def setup(self, *, in_process: bool = False, optional: bool = False) -> Callable[[SetupHook], SetupHook]: ...
 
     def setup(
-        self, hook: SetupHook | None = None, /, *, in_process: bool = False
+        self, hook: SetupHook | None = None, /, *, in_process: bool = False, optional: bool = False
     ) -> SetupHook | Callable[[SetupHook], SetupHook]:
         """Register the decorated function to seed data before recording.
 
@@ -119,6 +121,11 @@ class Scenario:
         ``--ckan-ini``), so the hook can use CKAN's and the extension's test
         factories. Either way it is called as ``hook(setup)`` with a
         :class:`~ckan_demo.seeding.Setup`, after the demo users exist.
+
+        ``optional=True`` is for scenes that work with whatever the portal
+        has: when ``record`` can't seed (no token or ckan.ini, no permission,
+        CKAN rejects the data, the portal is unreachable), it warns and
+        records the portal as it is instead of stopping.
         """
 
         def register(hook: SetupHook) -> SetupHook:
@@ -126,6 +133,7 @@ class Scenario:
                 raise ScenarioError("the scenario already has a setup hook")
             self.setup_hook = hook
             self.setup_in_process = in_process
+            self.setup_optional = optional
             return hook
 
         return register(hook) if hook is not None else register

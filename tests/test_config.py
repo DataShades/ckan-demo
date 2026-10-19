@@ -21,7 +21,8 @@ def _project(tmp_path: Path, table: str) -> Path:
 def test_nearest_pyproject_is_used_and_paths_are_relative_to_it(tmp_path):
     scenario = _project(
         tmp_path,
-        '[tool.ckan-demo]\nportal = "http://portal.test"\nckan-ini = "../config/ckan.ini"\noutput = "demo/output"\n',
+        '[tool.ckan-demo]\nportal = "http://portal.test"\nckan-ini = "../config/ckan.ini"\noutput = "demo/output"\n'
+        'transition = "cut"\n',
     )
 
     config = load_config(scenario)
@@ -30,7 +31,8 @@ def test_nearest_pyproject_is_used_and_paths_are_relative_to_it(tmp_path):
     assert config.portal == "http://portal.test"
     assert config.ckan_ini == (tmp_path.parent / "config" / "ckan.ini").resolve()
     assert config.output == (tmp_path / "demo" / "output").resolve()
-    assert config.keys == {"portal", "ckan-ini", "output"}
+    assert config.transition == "cut"
+    assert config.keys == {"portal", "ckan-ini", "output", "transition"}
 
 
 def test_pyproject_without_the_table_means_no_settings(tmp_path):

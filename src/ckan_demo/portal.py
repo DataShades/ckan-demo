@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Any, Union
 
 import requests
 from ckanapi import LocalCKAN, NotFound, RemoteCKAN
+from ckanapi import errors as ckanapi_errors
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -26,6 +27,16 @@ if TYPE_CHECKING:
     from ckan_demo.scenario import User
 
 CKAN = Union[RemoteCKAN, LocalCKAN]  # noqa: UP007 - a runtime alias, valid on Python 3.10
+
+ACTION_ERRORS: tuple[type[Exception], ...] = (
+    ckanapi_errors.CKANAPIError,
+    ckanapi_errors.NotAuthorized,
+    ckanapi_errors.NotFound,
+    ckanapi_errors.ValidationError,
+    ckanapi_errors.SearchQueryError,
+    ckanapi_errors.SearchError,
+    ckanapi_errors.SearchIndexError,
+)
 
 
 class PortalError(Exception):

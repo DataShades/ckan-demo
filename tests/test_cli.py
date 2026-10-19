@@ -5,8 +5,10 @@ import textwrap
 import pytest
 from click.testing import CliRunner
 
-from ckan_demo import seeding
-from ckan_demo.cli import SizeType, cli
+from ckan_demo import Scenario, seeding
+from ckan_demo.cli import SizeType, cli, resolve_transition
+from ckan_demo.config import Config, ConfigError
+from ckan_demo.video import Transition
 
 SCENARIO = textwrap.dedent(
     """
@@ -119,3 +121,36 @@ def test_help_mentions_the_environment_variables(runner):
     assert result.exit_code == 0
     assert "CKAN_DEMO_API_TOKEN" in result.output
     assert "CKAN_INI" in result.output
+
+
+@pytest.mark.parametrize(
+    ("flag", "scenario_value", "config_value", "expected"),
+    [
+        (None, None, None, "fade:0.4"),
+        (None, None, "cut", "cut"),
+        (None, "crossfade:0.8", "cut", "crossfade:0.8"),
+        ("fade:0.2", "crossfade:0.8", "cut", "fade:0.2"),
+    ],
+)
+def test_transition_precedence(flag, scenario_value, config_value, expected):
+
+    resolved = resolve_transition(
+        Transition.parse(flag) if flag else None,
+        Scenario("Demo", transition=scenario_value),
+        Config(transition=config_value),
+    )
+
+    assert str(resolved) == expected
+
+
+def test_bad_scenario_transition_is_a_clean_error():
+
+    with pytest.raises(ConfigError, match="the scenario: 'wipe' is not a transition"):
+        resolve_transition(None, Scenario("Demo", transition="wipe"), Config())
+
+
+def test_transition_flag_is_validated(runner, scenario_file):
+    result = runner.invoke(cli, ["record", str(scenario_file), "--transition", "wipe"])
+
+    assert result.exit_code == 2
+    assert "is not a transition" in result.output

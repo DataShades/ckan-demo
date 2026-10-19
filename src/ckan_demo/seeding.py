@@ -19,12 +19,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from ckan_demo.portal import CKAN, Portal, PortalError, ensure_user
+import requests
+from ckanapi.errors import NotAuthorized
+
+from ckan_demo.portal import ACTION_ERRORS, CKAN, Portal, PortalError, ensure_user
 
 if TYPE_CHECKING:
     from ckan_demo.scenario import Scenario
 
 TOKEN_HINT = "an API token (--api-token or $CKAN_DEMO_API_TOKEN)"
+SEEDING_ERRORS = (PortalError, *ACTION_ERRORS, requests.RequestException)
 
 
 @dataclass(frozen=True)
@@ -71,3 +75,45 @@ def _seed(scenario: Scenario, portal: Portal, ckan: CKAN, *, reset: bool, in_pro
     if scenario.setup_hook:
         scenario.setup_hook(setup)
     return setup
+
+
+def seed_before_recording(
+    scenario: Scenario, portal: Portal, *, reset: bool, log: Any = print, warn: Any = print
+) -> bool:
+    """Seed before ``record``; returns whether it did.
+
+    A scenario whose setup is ``optional`` records the portal as it is when
+    seeding can't run or fails, with one warning; otherwise a failure stops
+    the run (the scenes need the data).
+    """
+    if not can_seed(scenario, portal):
+        if scenario.setup_hook or scenario.users or reset:
+            if scenario.setup_optional:
+                log(f"Seeding skipped (it needs {requirements(scenario)}); recording the portal as it is")
+            else:
+                warn(f"warning: skipping data setup, it needs {requirements(scenario)}")
+        return False
+
+    log("Preparing data…")
+    try:
+        run_setup(scenario, portal, reset=reset, log=log)
+    except SEEDING_ERRORS as error:
+        if not scenario.setup_optional:
+            raise
+        warn(f"warning: seeding stopped, {_why(error)}; recording the portal as it is")
+        return False
+    return True
+
+
+def _message(error: BaseException) -> str:
+    """CKAN's own message: remote errors carry the API's error dict."""
+    detail = error.args[0] if error.args else ""
+    if isinstance(detail, dict):
+        detail = detail.get("message") or {k: v for k, v in detail.items() if k != "__type"}
+    return str(detail or type(error).__name__)
+
+
+def _why(error: BaseException) -> str:
+    if isinstance(error, NotAuthorized):
+        return f"not allowed on this portal ({_message(error)})"
+    return f"{type(error).__name__}: {_message(error)}"

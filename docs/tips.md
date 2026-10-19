@@ -4,6 +4,16 @@
 
 - GIFs get large quickly; make them from a single scene, e.g.
   `--scenes 02-staff-triage --gif`.
+- Captions pace themselves: each stays up long enough to read before the next
+  one replaces it, with or without `--no-captions` (so a voice-over gets the
+  same room).
+- Scenes fade through black into each other by default, so a change of page
+  between scenes isn't a hard cut. Choose another transition per run
+  (`--transition crossfade:0.6`), per scenario (`Scenario(transition=...)`) or
+  per project (`transition` in `[tool.ckan-demo]`): `cut`, `fade[:seconds]` or
+  `crossfade[:seconds]`. A crossfade overlaps the scenes, so the video gets a
+  little shorter. Start a scene with a card or a caption when the viewer needs
+  to know where they are.
 - Tune the whole video with `--speed` (1.3 is 30% faster) rather than editing
   every pause.
 - Watch it with `--headed` while writing scenes: you see what the camera sees.

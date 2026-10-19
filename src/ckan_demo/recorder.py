@@ -78,6 +78,7 @@ def _record_scene(browser: Browser, options: Options, scene: Scene, state: Path 
     director = Director(page, options)
     try:
         scene.play(director)
+        director.wait_for_reading()  # a caption left up at the end is read too
     finally:
         context.close()  # finishes writing the video
 

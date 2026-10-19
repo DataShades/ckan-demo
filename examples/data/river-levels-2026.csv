@@ -1,0 +1,13 @@
+station,river,measured_at,level_m,trend
+Kyiv - Pivdennyi Bridge,Dnipro,2026-03-02T06:00:00Z,2.41,steady
+Kyiv - Pivdennyi Bridge,Dnipro,2026-03-02T07:00:00Z,2.43,rising
+Kyiv - Pivdennyi Bridge,Dnipro,2026-03-02T08:00:00Z,2.47,rising
+Chernihiv,Desna,2026-03-02T06:00:00Z,1.88,steady
+Chernihiv,Desna,2026-03-02T07:00:00Z,1.87,falling
+Chernihiv,Desna,2026-03-02T08:00:00Z,1.85,falling
+Zhytomyr,Teteriv,2026-03-02T06:00:00Z,0.96,steady
+Zhytomyr,Teteriv,2026-03-02T07:00:00Z,0.97,steady
+Zhytomyr,Teteriv,2026-03-02T08:00:00Z,0.99,rising
+Vinnytsia,Southern Bug,2026-03-02T06:00:00Z,1.32,falling
+Vinnytsia,Southern Bug,2026-03-02T07:00:00Z,1.30,falling
+Vinnytsia,Southern Bug,2026-03-02T08:00:00Z,1.29,steady

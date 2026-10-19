@@ -10,7 +10,7 @@ from ckan_demo.config import Config, ConfigError, load_config
 
 
 def _project(tmp_path: Path, table: str) -> Path:
-    """An extension-like layout: pyproject.toml at the root, scenario in demo/."""
+    """pyproject.toml at the root, scenario in demo/."""
     (tmp_path / "pyproject.toml").write_text(f"[project]\nname = 'ckanext-foo'\n\n{table}")
     scenario = tmp_path / "demo" / "scenario.py"
     scenario.parent.mkdir()
@@ -73,11 +73,11 @@ def test_command_line_beats_config_beats_defaults():
     portal, output = resolve_settings(scenario, Config(), **nothing)
     assert (portal.url, portal.ckan_ini, output) == (DEFAULT_PORTAL, None, Path("demo-output/my-demo"))
 
-    # Config fills what isn't given.
+    # Config fills the gaps.
     portal, output = resolve_settings(scenario, config, **nothing)
     assert (portal.url, portal.ckan_ini, output) == ("http://config.test", Path("/config.ini"), Path("/config-out"))
 
-    # The command line (flags, or environment variables via Click) wins.
+    # Command line (flags or env vars) wins.
     portal, output = resolve_settings(
         scenario,
         config,

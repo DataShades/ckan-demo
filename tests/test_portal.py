@@ -1,4 +1,4 @@
-"""The ckanapi-based client, against a tiny fake CKAN (see conftest.py)."""
+"""Portal against the fake CKAN in conftest.py."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def test_action_errors_are_ckanapi_errors(ckan):
 
 
 def test_name_fields_pass_through(ckan):
-    # CKAN's own payloads are full of "name" (users, datasets, orgs...).
+    # "name" is a common CKAN field.
     assert Portal(ckan.url).remote().action.echo(name="my-dataset") == {"name": "my-dataset"}
 
 

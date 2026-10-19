@@ -23,7 +23,7 @@ SCENARIO = textwrap.dedent(
     @scenario.scene("browse")
     def browse(d): ...
 
-    @scenario.setup(in_process=True)
+    @scenario.setup(local=True)
     def prepare(setup): ...
     """
 )
@@ -38,7 +38,7 @@ def scenario_file(tmp_path):
 
 @pytest.fixture
 def runner(monkeypatch):
-    # CKAN's pytest plugin sets CKAN_INI; start every test from a clean slate.
+    # CKAN's pytest plugin sets CKAN_INI.
     monkeypatch.delenv("CKAN_INI", raising=False)
     monkeypatch.delenv("CKAN_DEMO_API_TOKEN", raising=False)
     return CliRunner()
@@ -52,7 +52,7 @@ def test_list_shows_users_scenes_and_seeding(runner, scenario_file):
     assert "anna-support (sysadmin)" in result.output
     assert "Assign and answer a new ticket." in result.output
     assert "anonymous" in result.output
-    assert "Seeding: in-process (needs the portal's ckan.ini (--ckan-ini or $CKAN_INI))" in result.output
+    assert "Seeding: local (needs the portal's ckan.ini (--ckan-ini or $CKAN_INI))" in result.output
 
 
 def test_setup_without_requirements_explains_what_is_needed(runner, scenario_file):

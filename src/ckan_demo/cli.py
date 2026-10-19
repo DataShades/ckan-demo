@@ -1,4 +1,4 @@
-"""``ckan-demo``: record demo videos of a CKAN portal from scenario files."""
+"""The ``ckan-demo`` command."""
 
 from __future__ import annotations
 
@@ -19,14 +19,14 @@ from ckan_demo.recorder import RecordingError, record
 from ckan_demo.scenario import Scenario, ScenarioError, load_scenario
 
 TOKEN_ENV = "CKAN_DEMO_API_TOKEN"
-CKAN_INI_ENV = "CKAN_INI"  # what CKAN's own CLI reads
+CKAN_INI_ENV = "CKAN_INI"  # same as CKAN's CLI
 DEFAULT_PORTAL = "http://127.0.0.1:5000"
 
 F = TypeVar("F", bound=Callable[..., Any])
 
 
 class SizeType(click.ParamType):
-    """A video size such as ``1920x1080``."""
+    """Video size, e.g. ``1920x1080``."""
 
     name = "WIDTHxHEIGHT"
 
@@ -54,7 +54,7 @@ class TransitionType(click.ParamType):
 
 
 def resolve_transition(flag: video.Transition | None, scenario: Scenario, config: Config) -> video.Transition:
-    """Command line, then the scenario, then ``[tool.ckan-demo]``, then the default."""
+    """Flag, then scenario, then config, then default."""
     if flag is not None:
         return flag
     for source, value in (("the scenario", scenario.transition), (f"{config.source}", config.transition)):
@@ -68,7 +68,7 @@ def resolve_transition(flag: video.Transition | None, scenario: Scenario, config
 
 @contextlib.contextmanager
 def _clean_errors() -> Iterator[None]:
-    """Report the tool's own errors as one line, not a traceback."""
+    """Turn known errors into one-line messages."""
     try:
         yield
     except (ScenarioError, PortalError, ConfigError) as error:
@@ -84,7 +84,7 @@ def _scenario_argument(func: F) -> F:
 
 
 def _portal_options(func: F) -> F:
-    """The options every command that talks to a portal shares."""
+    """Options shared by commands that talk to a portal."""
     options = [
         _scenario_argument,
         click.option("--portal", metavar="URL", help=f"CKAN site URL. [default: config portal, or {DEFAULT_PORTAL}]"),
@@ -100,7 +100,7 @@ def _portal_options(func: F) -> F:
             type=click.Path(dir_okay=False, path_type=Path),
             envvar=CKAN_INI_ENV,
             show_envvar=True,
-            help="The portal's ckan.ini, for scenarios that seed in-process. [default: config ckan-ini]",
+            help="The portal's ckan.ini, for local seeding. [default: config ckan-ini]",
         ),
         click.option("--reset", is_flag=True, help="Ask the scenario to reset its data to a clean slate."),
     ]
@@ -118,12 +118,8 @@ def resolve_settings(
     ckan_ini: Path | None,
     output: Path | None = None,
 ) -> tuple[Portal, Path]:
-    """The portal and output directory.
-
-    ``portal``, ``ckan_ini`` and ``output`` are what the command line (or, for
-    ``ckan_ini``, the environment) gave; missing ones come from
-    ``[tool.ckan-demo]``, then the built-in defaults.
-    """
+    """Portal and output directory: command line first, then config, then
+    defaults."""
     site = Portal(
         portal or config.portal or DEFAULT_PORTAL,
         api_token=api_token,
@@ -146,7 +142,7 @@ def cli() -> None:
 @cli.command("list")
 @_scenario_argument
 def list_command(scenario: Path) -> None:
-    """Show a scenario's users, scenes and how it seeds."""
+    """Show a scenario's users, scenes and seeding."""
     with _clean_errors():
         loaded = load_scenario(scenario)
         config = load_config(scenario)
@@ -156,7 +152,7 @@ def list_command(scenario: Path) -> None:
         click.echo()
         _describe_config(config)
     if loaded.setup_hook:
-        how = "in-process" if loaded.setup_in_process else "through the API"
+        how = "local" if loaded.setup_local else "through the API or local"
         optional = ", optional" if loaded.setup_optional else ""
         click.echo(f"\nSeeding: {how}{optional} (needs {seeding.requirements(loaded)})")
     click.echo("\nUsers:")
@@ -170,7 +166,7 @@ def list_command(scenario: Path) -> None:
 @cli.command()
 @_portal_options
 def setup(scenario: Path, portal: str | None, api_token: str | None, ckan_ini: Path | None, reset: bool) -> None:
-    """Only seed the portal: the demo users and the scenario's data."""
+    """Seed the portal without recording."""
     with _clean_errors():
         loaded = load_scenario(scenario)
         config = load_config(scenario)
@@ -222,7 +218,7 @@ def record_command(
     gif: bool,
     output: Path | None,
 ) -> None:
-    """Seed (when the run has what the scenario needs), record every scene and join them."""
+    """Seed, record every scene and join them."""
     with _clean_errors():
         loaded = load_scenario(scenario)
         config = load_config(scenario)

@@ -1,4 +1,4 @@
-"""Record demo videos of CKAN portals and extensions from Python scenarios."""
+"""Demo videos of CKAN portals from Python scenarios."""
 
 from ckan_demo.director import Director, Options
 from ckan_demo.portal import Portal, PortalError, exists

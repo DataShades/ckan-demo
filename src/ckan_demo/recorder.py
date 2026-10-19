@@ -1,4 +1,4 @@
-"""Recording: every scene in its own logged-in browser context and clip."""
+"""Records each scene in its own browser context and clip."""
 
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ OVERLAY = files("ckan_demo").joinpath("overlay.js").read_text()
 @dataclass(frozen=True)
 class Clip:
     path: Path
-    lead_in: float  # seconds of page loading at the start, cut when joining
+    lead_in: float  # loading time at the start, cut when joining
 
 
 class RecordingError(Exception):
-    """A scene failed; ``clips`` holds the ones recorded before it."""
+    """A scene failed; ``clips`` are the ones recorded before it."""
 
     def __init__(self, scene: str, error: BaseException, clips: list[Clip]) -> None:
         super().__init__(f"scene {scene!r} failed: {error}")
@@ -37,14 +37,13 @@ class RecordingError(Exception):
 
 
 def _prepare_context(context: BrowserContext, options: Options) -> None:
-    """Load the overlay, and hide development-only chrome (the Flask debug
-    toolbar would otherwise cover buttons on the right of the page)."""
+    """Add the overlay and hide the Flask debug toolbar."""
     context.add_init_script(OVERLAY)
     context.add_cookies([{"name": "fldt", "value": "hide", "url": options.base_url}])
 
 
 def _login(browser: Browser, options: Options, user: User, path: Path) -> Path:
-    """Log in through the form once, off camera, and keep the session."""
+    """Log in once, off camera, and save the session."""
     context = browser.new_context(base_url=options.base_url)
     _prepare_context(context, options)
     page = context.new_page()
@@ -78,11 +77,11 @@ def _record_scene(browser: Browser, options: Options, scene: Scene, state: Path 
     director = Director(page, options)
     try:
         scene.play(director)
-        director.wait_for_reading()  # a caption left up at the end is read too
+        director.wait_for_reading()  # let a final caption be read
     finally:
-        context.close()  # finishes writing the video
+        context.close()  # writes the video
 
-    if page.video is None:  # pragma: no cover - recording is always on here
+    if page.video is None:  # pragma: no cover
         raise RuntimeError("Playwright did not record a video")
     return Clip(Path(page.video.path()), director.lead_in)
 
@@ -95,7 +94,7 @@ def record(
     headed: bool = False,
     on_scene: Callable[[str], object] = print,
 ) -> list[Clip]:
-    """Record ``scenes`` into ``options.output/<scene>.webm`` and return them."""
+    """Record ``scenes`` to ``<output>/<scene>.webm``."""
     options.output.mkdir(parents=True, exist_ok=True)
     clips: list[Clip] = []
 

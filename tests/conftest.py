@@ -1,4 +1,4 @@
-"""Shared fixtures: a tiny fake CKAN action API."""
+"""A fake CKAN action API."""
 
 from __future__ import annotations
 
@@ -45,12 +45,12 @@ def ckan():
         def do_POST(self):
             action = self.path.rsplit("/", 1)[-1]
             data = json.loads(self.rfile.read(int(self.headers["Content-Length"])) or b"{}")
-            # ckanapi sends the token as X-CKAN-API-Key, which CKAN accepts.
+            # ckanapi sends the token as X-CKAN-API-Key.
             fake.calls.append((action, data, self.headers.get("X-CKAN-API-Key")))
             self._reply(*fake.handle(action, data))
 
         def do_GET(self):
-            # A non-action JSON page, for Portal.get_json.
+            # For Portal.get_json.
             fake.calls.append(("GET " + self.path, {}, self.headers.get("Authorization")))
             if self.path.startswith("/table"):
                 self._reply(200, {"data": [{"id": 1}], "last_page": 1})

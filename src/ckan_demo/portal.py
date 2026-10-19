@@ -1,13 +1,5 @@
-"""Talking to the CKAN portal being demoed, through ckanapi.
-
-The same ckanapi interface works both ways a scenario can seed:
-
-- :meth:`Portal.remote` returns a ``RemoteCKAN`` that calls the action API
-  with a sysadmin's token, so ckan-demo works against any portal it can reach;
-- :meth:`Portal.local_ckan` runs CKAN in-process (given the portal's
-  ``ckan.ini``) and yields a ``LocalCKAN``, acting as the site user.
-
-Either way: ``ckan.action.package_create(name=..., ...)``.
+"""Access to the portal through ckanapi: ``RemoteCKAN`` with a token, or
+``LocalCKAN`` locally with the portal's ckan.ini.
 """
 
 from __future__ import annotations
@@ -26,7 +18,7 @@ if TYPE_CHECKING:
 
     from ckan_demo.scenario import User
 
-CKAN = Union[RemoteCKAN, LocalCKAN]  # noqa: UP007 - a runtime alias, valid on Python 3.10
+CKAN = Union[RemoteCKAN, LocalCKAN]  # noqa: UP007 - runtime alias, Python 3.10
 
 ACTION_ERRORS: tuple[type[Exception], ...] = (
     ckanapi_errors.CKANAPIError,
@@ -40,7 +32,7 @@ ACTION_ERRORS: tuple[type[Exception], ...] = (
 
 
 class PortalError(Exception):
-    """The portal could not be reached, or is set up wrong for this run."""
+    """Portal unreachable, or missing setup for this run."""
 
 
 def _user_agent() -> str:
@@ -51,7 +43,7 @@ def _user_agent() -> str:
 
 
 class Portal:
-    """A CKAN portal: its URL, a sysadmin API token, and its ckan.ini."""
+    """Portal URL, sysadmin API token and ckan.ini."""
 
     def __init__(
         self, url: str, api_token: str | None = None, ckan_ini: Path | None = None, timeout: float = 30
@@ -62,11 +54,11 @@ class Portal:
         self.timeout = timeout
 
     def remote(self) -> RemoteCKAN:
-        """A ckanapi client for the action API, authenticated with the token."""
+        """ckanapi client for the action API."""
         return RemoteCKAN(self.url, apikey=self.api_token, user_agent=_user_agent())
 
     def get_json(self, path: str, **params: Any) -> Any:
-        """GET a JSON page that isn't an action (e.g. a table's data endpoint)."""
+        """GET a non-action JSON page, e.g. a table's data endpoint."""
         headers = {"Accept": "application/json", "X-Requested-With": "XMLHttpRequest"}
         if self.api_token:
             headers["Authorization"] = self.api_token
@@ -79,16 +71,14 @@ class Portal:
 
     @contextlib.contextmanager
     def local_ckan(self) -> Iterator[LocalCKAN]:
-        """Run CKAN in-process against the portal's database.
+        """Load CKAN locally and yield a ``LocalCKAN`` (as the site user).
 
-        Yields a ``LocalCKAN`` acting as the site user; inside the block,
-        CKAN's models, toolkit and test factories work too. Needs CKAN
-        importable and the portal's ``ckan.ini``.
+        Models, toolkit and factories work inside the block.
         """
         if not self.ckan_ini:
             raise PortalError("this needs the portal's ckan.ini: pass --ckan-ini or set $CKAN_INI")
 
-        # Imported here: CKAN is only needed by scenarios that seed in-process.
+        # CKAN is only needed for local seeding.
         from ckan.cli import load_config  # noqa: PLC0415
         from ckan.config.middleware import make_app  # noqa: PLC0415
 
@@ -98,7 +88,7 @@ class Portal:
 
 
 def exists(ckan: CKAN, action: str, /, **data: Any) -> dict[str, Any] | None:
-    """``ckan.call_action(action, data)``, or None when CKAN says Not Found."""
+    """The action's result, or None if CKAN says Not Found."""
     try:
         return ckan.call_action(action, data)
     except NotFound:
@@ -106,11 +96,7 @@ def exists(ckan: CKAN, action: str, /, **data: Any) -> dict[str, Any] | None:
 
 
 def ensure_user(ckan: CKAN, user: User) -> dict[str, Any]:
-    """Create ``user``, or bring an existing account in line with it.
-
-    The password and sysadmin flag are always reset, so the browser can
-    log in as the user however the account was left.
-    """
+    """Create ``user`` or update it, resetting password and sysadmin flag."""
     wanted = {
         "fullname": user.fullname or user.name,
         "email": user.email_address,

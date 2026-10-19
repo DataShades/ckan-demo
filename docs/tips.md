@@ -35,7 +35,7 @@
   it are kept. Fix it and run `--scenes` from that scene on, or the whole
   story if scenes depend on each other.
 - **Logging in fails**: run `ckan-demo setup` (with an API token, or
-  `--ckan-ini` for in-process scenarios) so the demo users exist with the
+  `--ckan-ini` for local seeding) so the demo users exist with the
   scenario's passwords.
 
 ## Development portals

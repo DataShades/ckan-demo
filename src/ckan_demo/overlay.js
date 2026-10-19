@@ -1,10 +1,6 @@
 /**
- * Demo overlay, injected into every page before it loads.
- *
- * Playwright's video has no mouse pointer, so draw one that follows the
- * (scripted) mouse, plus a ripple on click. Also a caption bar and a
- * full-screen title card the scenes can show, and CSS that hides the
- * development-only chrome (CKAN's debug box, Flask debug toolbar).
+ * Injected into every page: a pointer and click ripples (Playwright's video
+ * has none), the caption bar, title cards, and CSS hiding CKAN's dev chrome.
  */
 (() => {
     if (window.__demo) return;
@@ -12,7 +8,7 @@
     const css = `
         .debug, #flDebug { display: none !important; }
 
-        /* Stills (Director.screenshot) show the page, not the overlay. */
+        /* Hidden in stills (Director.screenshot). */
         html.demo-still #demo-cursor,
         html.demo-still #demo-caption,
         html.demo-still .demo-ripple { display: none !important; }
@@ -84,7 +80,7 @@
         card.id = "demo-card";
         document.body.append(cursor, caption, card);
 
-        // Keep the pointer where the previous page left it.
+        // Restore the pointer position from the previous page.
         const last = JSON.parse(sessionStorage.getItem("demo-cursor") || "null");
         if (last) move(last.x, last.y);
     }

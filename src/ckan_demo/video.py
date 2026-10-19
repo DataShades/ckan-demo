@@ -1,4 +1,4 @@
-"""Joining clips into one video, with ffmpeg."""
+"""Joins clips into one video with ffmpeg."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ class FfmpegMissing(Exception):
     """ffmpeg is not on PATH."""
 
 
-# ── Transitions between scenes ───────────────────────────────────────────────
+# ── Transitions ──────────────────────────────────────────────────────────────
 
 TransitionKind = Literal["cut", "fade", "crossfade"]
 _DEFAULT_SECONDS: dict[str, float] = {"cut": 0.0, "fade": 0.4, "crossfade": 0.6}
@@ -27,13 +27,8 @@ _DEFAULT_SECONDS: dict[str, float] = {"cut": 0.0, "fade": 0.4, "crossfade": 0.6}
 
 @dataclass(frozen=True)
 class Transition:
-    """How one scene gives way to the next.
-
-    - ``cut``: straight to the next scene.
-    - ``fade``: the scene fades out to black, the next fades in from it.
-    - ``crossfade``: the next scene blends over the end of the previous one
-      (the scenes overlap, so the video is a little shorter).
-    """
+    """Between scenes: ``cut``, ``fade`` (through black) or ``crossfade``
+    (overlapping, so slightly shorter)."""
 
     kind: TransitionKind = "fade"
     seconds: float = _DEFAULT_SECONDS["fade"]
@@ -72,7 +67,7 @@ def _ffmpeg(tool: str = "ffmpeg") -> str:
 
 
 def duration(video: Path) -> float:
-    """A video's length in seconds, from ffprobe (it ships with ffmpeg)."""
+    """Video length in seconds, via ffprobe."""
     result = subprocess.run(
         [_ffmpeg("ffprobe"), "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(video)],
         check=True,
@@ -90,10 +85,9 @@ def join_command(
     transition: Transition = DEFAULT_TRANSITION,
     fps: int = 30,
 ) -> list[str]:
-    """The ffmpeg command that trims each clip's lead-in and joins them.
+    """ffmpeg command that trims lead-ins and joins the clips.
 
-    ``durations`` (each clip's full length) are needed for ``fade`` and
-    ``crossfade``; without them the scenes are cut together.
+    Fades need ``durations``; without them scenes are cut.
     """
     inputs: list[str] = []
     filters: list[str] = []
@@ -103,8 +97,7 @@ def join_command(
 
     for index, clip in enumerate(clips):
         inputs += ["-i", str(clip.path)]
-        # Same frame rate, time base and pixel format, so clips can be joined
-        # and blended.
+        # Same fps, time base and pixel format, as concat and xfade need.
         chain = f"[{index}:v]trim=start={clip.lead_in:.2f},setpts=PTS-STARTPTS,fps={fps},settb=AVTB,format=yuv420p"
         if kind == "fade":
             chain += f",fade=t=in:st=0:d={seconds:g}"
@@ -113,8 +106,8 @@ def join_command(
         filters.append(f"{chain}[v{index}]")
 
     if kind == "crossfade" and len(clips) > 1:
-        # Each xfade starts `overlap` seconds before the end of what's joined
-        # so far; a clip shorter than twice the overlap blends for less.
+        # Each blend starts `overlap` seconds before the end so far; short
+        # clips blend for less.
         joined, total = "[v0]", lengths[0]
         for index in range(1, len(clips)):
             overlap = min(seconds, lengths[index - 1] / 2, lengths[index] / 2)
@@ -136,7 +129,7 @@ def join_command(
 
 
 def gif_command(video: Path, output: Path, *, width: int = 960, fps: int = 12) -> list[str]:
-    """The ffmpeg command for a GIF with a palette made for this video."""
+    """ffmpeg command for a GIF with its own palette."""
     scale = f"fps={fps},scale={width}:-1:flags=lanczos"
     return [
         "ffmpeg", "-y", "-loglevel", "error", "-i", str(video),

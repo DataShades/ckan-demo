@@ -59,7 +59,7 @@ def test_fade_goes_through_black():
 
     graph = _graph(video.join_command(clips, Path("o.mp4"), durations=[10.5, 6.0], transition=Transition("fade", 0.4)))
 
-    # Clip a: 10 s after its 0.5 s lead-in, so it fades out from 9.6 s.
+    # 10.5 s clip minus 0.5 s lead-in: fade out at 9.6 s.
     assert f"[0:v]trim=start=0.50,{PREP},fade=t=in:st=0:d=0.4,fade=t=out:st=9.60:d=0.4[v0]" in graph
     assert f"[1:v]trim=start=0.00,{PREP},fade=t=in:st=0:d=0.4,fade=t=out:st=5.60:d=0.4[v1]" in graph
     assert graph.endswith("concat=n=2:v=1:a=0[out]")
@@ -81,7 +81,7 @@ def test_crossfade_overlaps_scenes_at_the_right_offsets():
         video.join_command(clips, Path("o.mp4"), durations=[10.0, 6.0, 8.0], transition=Transition("crossfade", 0.6))
     )
 
-    # b starts blending 0.6 s before a ends; c 0.6 s before (10 + 6 - 0.6) ends.
+    # Each blend starts 0.6 s before the end so far.
     assert "[v0][v1]xfade=transition=fade:duration=0.60:offset=9.40[x1]" in graph
     assert "[x1][v2]xfade=transition=fade:duration=0.60:offset=14.80[out]" in graph
     assert "concat" not in graph

@@ -21,17 +21,17 @@ def test_setup_decorator_defaults_to_the_api():
     def prepare(setup): ...
 
     assert scenario.setup_hook is prepare
-    assert scenario.setup_in_process is False
+    assert scenario.setup_local is False
 
 
-def test_setup_decorator_in_process():
+def test_setup_decorator_local():
     scenario = _scenario()
 
-    @scenario.setup(in_process=True)
+    @scenario.setup(local=True)
     def prepare(setup): ...
 
     assert scenario.setup_hook is prepare
-    assert scenario.setup_in_process is True
+    assert scenario.setup_local is True
 
 
 def test_only_one_setup_hook():
@@ -39,7 +39,7 @@ def test_only_one_setup_hook():
     scenario.setup(lambda setup: None)
 
     with pytest.raises(ScenarioError, match="already has a setup hook"):
-        scenario.setup(in_process=True)(lambda setup: None)
+        scenario.setup(local=True)(lambda setup: None)
 
 
 def test_api_seeding_creates_users_and_passes_them_to_the_hook(ckan):
@@ -51,7 +51,7 @@ def test_api_seeding_creates_users_and_passes_them_to_the_hook(ckan):
 
     (setup,) = received
     assert setup.reset is True
-    assert setup.in_process is False
+    assert setup.local is False
     assert setup.ckan.action.echo(ok=1) == {"ok": 1}  # the RemoteCKAN client
     assert setup.users["staff"]["name"] == "anna"
     assert setup.users["staff"]["sysadmin"] is True
@@ -64,7 +64,7 @@ def test_users_are_created_even_without_a_hook(ckan):
     assert set(ckan.users) == {"anna", "maria"}
 
 
-def test_in_process_seeding_runs_inside_ckan(monkeypatch):
+def test_local_seeding_runs_inside_ckan(monkeypatch):
     entered: list[str] = []
     local = object()  # stands in for the LocalCKAN that local_ckan() yields
 
@@ -75,7 +75,7 @@ def test_in_process_seeding_runs_inside_ckan(monkeypatch):
         entered.append("out")
 
     def fake_ensure(ckan, user):
-        assert ckan is local, "users must be created through the in-process client"
+        assert ckan is local, "users must be created through the local client"
         assert entered == ["in"], "users must be created inside the CKAN app context"
         return {"name": user.name, "id": f"id-{user.name}"}
 
@@ -85,7 +85,7 @@ def test_in_process_seeding_runs_inside_ckan(monkeypatch):
     scenario = _scenario()
     received: list[Setup] = []
 
-    @scenario.setup(in_process=True)
+    @scenario.setup(local=True)
     def prepare(setup):
         assert entered == ["in"], "the hook must run inside the CKAN app context"
         received.append(setup)
@@ -93,21 +93,21 @@ def test_in_process_seeding_runs_inside_ckan(monkeypatch):
     seeding.run_setup(scenario, Portal("http://x", ckan_ini="ckan.ini"), reset=False, log=lambda line: None)
 
     assert entered == ["in", "out"]
-    assert received[0].in_process is True
+    assert received[0].local is True
     assert received[0].ckan is local
     assert received[0].users["author"]["id"] == "id-maria"
 
 
 @pytest.mark.parametrize(
-    ("in_process", "portal", "message"),
+    ("local", "portal", "message"),
     [
         (True, Portal("http://x", api_token="secret"), "--ckan-ini"),
-        (False, Portal("http://x", ckan_ini="ckan.ini"), "API token"),
+        (False, Portal("http://x"), "API token .* or the portal's ckan.ini"),
     ],
 )
-def test_missing_requirements_are_explained(in_process, portal, message):
+def test_missing_requirements_are_explained(local, portal, message):
     scenario = _scenario()
-    scenario.setup(in_process=in_process)(lambda setup: None)
+    scenario.setup(local=local)(lambda setup: None)
 
     assert seeding.can_seed(scenario, portal) is False
     with pytest.raises(PortalError, match=message):
@@ -210,5 +210,51 @@ def test_successful_seeding(monkeypatch):
     lines = Lines()
 
     assert _seed(scenario, Portal("http://x", api_token="t"), lines) is True
-    assert lines.log == ["Preparing data…"]
+    assert lines.log == ["Preparing data… (through the API)"]
     assert lines.warn == []
+
+
+def _fake_local(monkeypatch):
+    """Fake local_ckan and ensure_user that record the client used."""
+    local = object()
+    used: list[object] = []
+
+    @contextlib.contextmanager
+    def fake_local_ckan(self):
+        yield local
+
+    def fake_ensure(ckan, user):
+        used.append(ckan)
+        return {"name": user.name}
+
+    monkeypatch.setattr(Portal, "local_ckan", fake_local_ckan)
+    monkeypatch.setattr(seeding, "ensure_user", fake_ensure)
+    return local, used
+
+
+def test_api_hook_runs_locally_with_only_a_ckan_ini(monkeypatch):
+    local, used = _fake_local(monkeypatch)
+    scenario = _scenario()
+    received: list[Setup] = []
+    scenario.setup(received.append)
+
+    seeding.run_setup(scenario, Portal("http://x", ckan_ini="ckan.ini"), reset=False, log=lambda line: None)
+
+    assert received[0].local is True
+    assert received[0].ckan is local
+    assert used == [local, local]
+
+
+def test_api_hook_prefers_the_token_when_both_are_given(monkeypatch, ckan):
+    local, _ = _fake_local(monkeypatch)
+    monkeypatch.setattr(seeding, "ensure_user", lambda client, user: {"name": user.name})
+    scenario = _scenario()
+    received: list[Setup] = []
+    scenario.setup(received.append)
+
+    seeding.run_setup(
+        scenario, Portal(ckan.url, api_token="t", ckan_ini="ckan.ini"), reset=False, log=lambda line: None
+    )
+
+    assert received[0].local is False
+    assert received[0].ckan is not local

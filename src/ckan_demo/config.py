@@ -1,15 +1,7 @@
-"""Run settings from ``[tool.ckan-demo]`` in the project's ``pyproject.toml``.
+"""Defaults from ``[tool.ckan-demo]`` in the nearest ``pyproject.toml``.
 
-So a project doesn't need long commands::
-
-    [tool.ckan-demo]
-    portal = "http://127.0.0.1:5000"
-    output = "demo/output"
-
-The nearest ``pyproject.toml`` from the scenario file upward is used; relative
-paths in it are relative to that file. Command-line flags and environment
-variables win over it. API tokens are never read from it: it is usually
-committed.
+Paths are relative to that file. Flags and environment variables win. API
+tokens are never read from it.
 """
 
 from __future__ import annotations
@@ -32,12 +24,12 @@ _STRING_KEYS = {"portal", "transition"}
 
 
 class ConfigError(Exception):
-    """``[tool.ckan-demo]`` is malformed."""
+    """Malformed ``[tool.ckan-demo]``."""
 
 
 @dataclass(frozen=True)
 class Config:
-    """Settings found in a ``pyproject.toml`` (all optional)."""
+    """Settings from ``pyproject.toml``; all optional."""
 
     source: Path | None = None
     portal: str | None = None
@@ -48,7 +40,7 @@ class Config:
 
 
 def find_pyproject(start: Path) -> Path | None:
-    """The nearest ``pyproject.toml`` in ``start`` or its parents."""
+    """Nearest ``pyproject.toml`` at or above ``start``."""
     directory = start if start.is_dir() else start.parent
     for candidate in (directory, *directory.parents):
         path = candidate / "pyproject.toml"
@@ -58,7 +50,7 @@ def find_pyproject(start: Path) -> Path | None:
 
 
 def load_config(scenario_path: Path) -> Config:
-    """``[tool.ckan-demo]`` of the project the scenario belongs to."""
+    """``[tool.ckan-demo]`` for the scenario's project."""
     pyproject = find_pyproject(scenario_path.resolve())
     if pyproject is None:
         return Config()

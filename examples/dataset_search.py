@@ -1,16 +1,12 @@
-"""Core CKAN, as an anonymous visitor: search, filter, explore, browse.
+"""Core CKAN as an anonymous visitor: search, filter, open a dataset, browse.
 
     ckan-demo record examples/dataset_search.py --portal https://demo.ckan.org
     ckan-demo record examples/dataset_search.py --api-token "$TOKEN" --reset
+    ckan-demo record examples/dataset_search.py --ckan-ini /path/to/ckan.ini --reset
 
-The scenes discover their content as they go (a search term from the portal's
-own datasets, the first facet, the first resource…) and skip what a portal
-doesn't have, so they work on any CKAN site.
-
-Seeding is optional. With a sysadmin's API token, it adds an organisation and
-two datasets with real CSV files (data/*.csv) through the API, so the video
-shows known content. Without a token, or without permission to create them,
-ckan-demo says so and records the portal as it is.
+Works on any CKAN site: the scenes use whatever data the portal has and skip
+what's missing. With a token or ckan.ini it first seeds an organisation and two
+datasets with the CSVs in data/; without them it records the portal as is.
 """
 
 from __future__ import annotations
@@ -54,9 +50,8 @@ DATASETS = [
 
 @scenario.setup(optional=True)
 def seed(setup: Setup) -> None:
-    """Through the API (ckanapi's RemoteCKAN), so it also works on a remote
-    portal you have a sysadmin token for."""
     ckan = setup.ckan
+
     if setup.reset:
         for spec in DATASETS:
             if exists(ckan, "package_show", id=spec["name"]):
@@ -73,8 +68,7 @@ def seed(setup: Setup) -> None:
         dataset = ckan.action.package_create(
             name=spec["name"], title=spec["title"], notes=spec["notes"], tags=spec["tags"], owner_org=ORG["name"]
         )
-        # A real file, uploaded into the portal's storage (it needs
-        # ckan.storage_path); ckanapi turns an open file into an upload.
+        # ckanapi uploads open files; the portal needs ckan.storage_path.
         with spec["file"].open("rb") as data:
             ckan.action.resource_create(
                 package_id=dataset["id"],
@@ -92,13 +86,13 @@ ORG_LINKS = ".groups-cards a[href*='/organization/'], .media-item a[href*='/orga
 
 
 def first(locator: Locator) -> Locator | None:
-    """The first match, or None when the portal doesn't have it."""
+    """First match, or None."""
     return locator.first if locator.count() else None
 
 
 def search_term(d: Director) -> str:
-    """A word from the portal's newest dataset title, looked up off camera
-    (before the first ``d.goto``, so it's cut from the clip)."""
+    """A word from the newest dataset title. Runs before ``d.goto``, so it's
+    off camera."""
     d.page.goto(d.options.base_url + "/dataset/?sort=metadata_modified+desc", wait_until="networkidle")
     title = d.page.locator(DATASET_LINKS).first.inner_text() if d.page.locator(DATASET_LINKS).count() else ""
     words = [word for word in re.findall(r"[^\W\d_]{4,}", title)]
@@ -107,7 +101,7 @@ def search_term(d: Director) -> str:
 
 @scenario.scene("01-search")
 def search(d: Director) -> None:
-    """Search the catalogue, narrow it with a facet and change the order."""
+    """Search, filter by a facet, sort by newest."""
     term = search_term(d)
 
     d.goto("/")
@@ -178,7 +172,7 @@ def dataset(d: Director) -> None:
 
 @scenario.scene("03-organisations")
 def organisations(d: Director) -> None:
-    """Browse the publishers, and the dark theme where the portal has one."""
+    """Organisations, then the dark theme if there is one."""
     d.goto("/organization/")
 
     org = first(d.page.locator(ORG_LINKS))

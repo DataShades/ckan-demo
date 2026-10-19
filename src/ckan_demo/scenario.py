@@ -1,19 +1,16 @@
-"""Scenarios: the story a demo video tells, as plain Python.
+"""Scenario files: users, an optional setup hook and scenes.
 
-A scenario file defines one :class:`Scenario` with the people who appear in it
-and the scenes they play::
+from ckan_demo import Director, Scenario, User
 
-    from ckan_demo import Director, Scenario, User
+scenario = Scenario(
+    "Dataset search",
+    users={"visitor": User("demo-visitor", fullname="Dana Visitor")},
+)
 
-    scenario = Scenario(
-        "Dataset search",
-        users={"visitor": User("demo-visitor", fullname="Dana Visitor")},
-    )
-
-    @scenario.scene("search", user="visitor")
-    def search(d: Director) -> None:
-        d.goto("/dataset/")
-        d.type(d.page.get_by_placeholder("Search datasets"), "population")
+@scenario.scene("search", user="visitor")
+def search(d: Director) -> None:
+    d.goto("/dataset/")
+    d.type(d.page.get_by_placeholder("Search datasets"), "population")
 """
 
 from __future__ import annotations
@@ -34,12 +31,12 @@ DEFAULT_PASSWORD = "correct horse battery staple"
 
 
 class ScenarioError(Exception):
-    """A scenario file is missing or inconsistent."""
+    """Bad or missing scenario file."""
 
 
 @dataclass(frozen=True)
 class User:
-    """A person in the demo. ``ckan-demo setup`` creates (or updates) them."""
+    """A demo user, created or updated before recording."""
 
     name: str
     fullname: str = ""
@@ -54,7 +51,7 @@ class User:
 
 @dataclass(frozen=True)
 class Scene:
-    """One recorded clip, played by one user (``None``: not logged in)."""
+    """One clip, played by one user (``None``: anonymous)."""
 
     name: str
     play: Callable[[Director], None]
@@ -67,25 +64,21 @@ SetupHook = Callable[["Setup"], None]
 
 @dataclass
 class Scenario:
-    """A demo: who appears in it, how to prepare the portal, and its scenes.
-
-    Scenes are recorded in the order they are declared, each into its own
-    clip, then joined into one video.
-    """
+    """Users, setup and scenes. Scenes are recorded in order, then joined."""
 
     title: str
     users: dict[str, User] = field(default_factory=dict)
     size: tuple[int, int] = (1920, 1080)  # Full HD
-    transition: str | None = None  # between scenes: "cut", "fade[:s]", "crossfade[:s]"
+    transition: str | None = None  # "cut", "fade[:s]" or "crossfade[:s]"
     scenes: list[Scene] = field(default_factory=list)
     setup_hook: SetupHook | None = None
-    setup_in_process: bool = False
+    setup_local: bool = False
     setup_optional: bool = False
 
     def scene(
         self, name: str, *, user: str | None = None
     ) -> Callable[[Callable[[Director], None]], Callable[[Director], None]]:
-        """Register the decorated function as the next scene."""
+        """Add the decorated function as the next scene."""
 
         def register(play: Callable[[Director], None]) -> Callable[[Director], None]:
             if any(scene.name == name for scene in self.scenes):
@@ -101,7 +94,7 @@ class Scenario:
 
     @property
     def slug(self) -> str:
-        """The title as a file name: "ckanext-issues", "dataset-search"."""
+        """Title as a file name, e.g. "dataset-search"."""
         slug = re.sub(r"[^a-z0-9]+", "-", self.title.lower()).strip("-")
         return slug or "demo"
 
@@ -109,37 +102,32 @@ class Scenario:
     def setup(self, hook: SetupHook, /) -> SetupHook: ...
 
     @overload
-    def setup(self, *, in_process: bool = False, optional: bool = False) -> Callable[[SetupHook], SetupHook]: ...
+    def setup(self, *, local: bool = False, optional: bool = False) -> Callable[[SetupHook], SetupHook]: ...
 
     def setup(
-        self, hook: SetupHook | None = None, /, *, in_process: bool = False, optional: bool = False
+        self, hook: SetupHook | None = None, /, *, local: bool = False, optional: bool = False
     ) -> SetupHook | Callable[[SetupHook], SetupHook]:
-        """Register the decorated function to seed data before recording.
+        """Add a hook that seeds data before recording.
 
-        ``@scenario.setup`` seeds through the CKAN API (needs an API token);
-        ``@scenario.setup(in_process=True)`` runs inside CKAN itself (needs
-        ``--ckan-ini``), so the hook can use CKAN's and the extension's test
-        factories. Either way it is called as ``hook(setup)`` with a
-        :class:`~ckan_demo.seeding.Setup`, after the demo users exist.
-
-        ``optional=True`` is for scenes that work with whatever the portal
-        has: when ``record`` can't seed (no token or ckan.ini, no permission,
-        CKAN rejects the data, the portal is unreachable), it warns and
-        records the portal as it is instead of stopping.
+        The hook gets a :class:`~ckan_demo.seeding.Setup`. By default it runs
+        through the API (token) or locally (ckan.ini), whichever the run has.
+        ``local=True``: always locally, inside CKAN, for factories and models.
+        ``optional=True``: if seeding can't run or fails, ``record`` warns and
+        carries on.
         """
 
         def register(hook: SetupHook) -> SetupHook:
             if self.setup_hook is not None:
                 raise ScenarioError("the scenario already has a setup hook")
             self.setup_hook = hook
-            self.setup_in_process = in_process
+            self.setup_local = local
             self.setup_optional = optional
             return hook
 
         return register(hook) if hook is not None else register
 
     def select(self, names: list[str] | None) -> list[Scene]:
-        """The scenes to record, in scenario order; ``None`` means all."""
+        """Scenes to record, in scenario order; ``None`` means all."""
         if not names:
             return list(self.scenes)
 
@@ -151,11 +139,7 @@ class Scenario:
 
 
 def load_scenario(path: str | Path) -> Scenario:
-    """Import a scenario file and return the :class:`Scenario` it defines.
-
-    The file must define exactly one Scenario; by convention it is called
-    ``scenario``.
-    """
+    """Import a scenario file. It must define exactly one Scenario."""
     path = Path(path).resolve()
     if not path.is_file():
         raise ScenarioError(f"scenario file not found: {path}")
@@ -166,7 +150,7 @@ def load_scenario(path: str | Path) -> Scenario:
         raise ScenarioError(f"cannot import {path}")
 
     module = importlib.util.module_from_spec(spec)
-    # Let the scenario import helpers that sit next to it.
+    # Scenarios may import modules next to them.
     sys.path.insert(0, str(path.parent))
     try:
         sys.modules[module_name] = module

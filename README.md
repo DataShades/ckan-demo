@@ -11,7 +11,7 @@ into one MP4. Re-recording after a UI change is one command.
 
 It is a standalone tool, not a CKAN plugin: it records any portal it can
 reach. Seeding the data a demo needs goes through
-[ckanapi](https://github.com/ckan/ckanapi): over the action API, or in-process
+[ckanapi](https://github.com/ckan/ckanapi): over the action API, or locally
 alongside the test factories your extension already has.
 
 ## Install
@@ -55,9 +55,9 @@ ckan-demo record demo.py --portal http://127.0.0.1:5000
 ```
 
 [`examples/dataset_search.py`](examples/dataset_search.py) works on any CKAN
-site as an anonymous visitor. With a sysadmin's API token it first seeds an
-organisation and two datasets with real CSV uploads; without one (or without
-permission) it records the portal as it is.
+site as an anonymous visitor. With a sysadmin's API token, or the portal's
+`ckan.ini`, it first seeds an organisation and two datasets with real CSV
+uploads; without either (or without permission) it records the portal as it is.
 
 ## Commands
 
@@ -73,7 +73,7 @@ permission) it records the portal as it is.
 | --- | --- | --- |
 | `--portal URL` | config, else `http://127.0.0.1:5000` | the CKAN site |
 | `--api-token TOKEN` | `$CKAN_DEMO_API_TOKEN` | a sysadmin's token, for scenarios that seed through the API |
-| `--ckan-ini PATH` | `$CKAN_INI`, else config | the portal's config, for scenarios that seed in-process |
+| `--ckan-ini PATH` | `$CKAN_INI`, else config | the portal's config, for local seeding |
 | `--reset` | | ask the scenario to reset its data to a clean slate |
 | `--no-setup` | | record without seeding |
 | `--scenes a,b` | all | record only these scenes (in scenario order) |
@@ -113,7 +113,7 @@ transition = "crossfade:0.6"
 - [Writing scenarios](docs/scenarios.md): scenes, users, the `Director`
   helpers, stills
 - [Seeding](docs/seeding.md): demo users, seeding through the API or
-  in-process with your test factories, where seeding code lives, `--reset`
+  locally with your test factories, where seeding code lives, `--reset`
 - [Tips and troubleshooting](docs/tips.md): pacing, flaky steps, dev-only
   chrome, video quality
 

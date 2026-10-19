@@ -185,7 +185,8 @@ def add_music(video: Path, music: Path, *, volume: float = DEFAULT_MUSIC_VOLUME)
     command = music_command(video, music, partial, length=duration(video), volume=volume)
     command[0] = _ffmpeg()
     try:
-        subprocess.run(command, check=True)
+        # ffmpeg's error goes into the exception (error.stderr), not the terminal.
+        subprocess.run(command, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError:
         partial.unlink(missing_ok=True)
         raise

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,34 @@ def reading_time(text: str) -> float:
     # About 180 words a minute, plus a moment to notice the caption.
     base, per_word, minimum = 0.6, 60 / 180, 1.8
     return max(minimum, base + len(text.split()) * per_word)
+
+
+_KEY_LABELS = {
+    "Control": "Ctrl",
+    "ControlOrMeta": "Ctrl",
+    "Escape": "Esc",
+    "Delete": "Del",
+    "PageUp": "PgUp",
+    "PageDown": "PgDn",
+    "ArrowUp": "↑",
+    "ArrowDown": "↓",
+    "ArrowLeft": "←",
+    "ArrowRight": "→",
+    " ": "Space",
+}
+
+
+def key_caps(key: str) -> list[str]:
+    """Keycap labels for a Playwright key: ``"Control+Enter"`` → ``["Ctrl", "Enter"]``."""
+    parts = key.split("+")
+    if key.endswith("+"):  # the + key itself: "+" or "Shift++"
+        parts = [*parts[:-2], "+"]
+    caps = []
+    for part in parts:
+        code = re.fullmatch(r"(?:Key|Digit)(\w)", part)  # KeyA, Digit1
+        name = code[1] if code else part
+        caps.append(_KEY_LABELS.get(name, name.upper() if len(name) == 1 else name))
+    return caps
 
 
 CaptionPosition = Literal["bottom", "top", "auto"]
@@ -191,8 +220,17 @@ class Director:
             locator.select_option(value)
         self.pause(0.6)
 
-    def press(self, key: str) -> None:
+    def press(self, key: str, *, badge: bool | None = None) -> None:
+        """Press a key (``"Enter"``) or shortcut (``"Control+Enter"``).
+
+        Shortcuts show a key badge just before they're pressed, so the viewer
+        sees what was pressed; ``badge=`` turns it on or off for any key.
+        """
         self._hide_card()
+        caps = key_caps(key)
+        if len(caps) > 1 if badge is None else badge:
+            self._page.evaluate("([caps, ms]) => window.__demo.keys(caps, ms)", [caps, 1800 / self.options.speed])
+            self.pause(0.5)
         self._page.keyboard.press(key)
         self.pause(0.3)
 

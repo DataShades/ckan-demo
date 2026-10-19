@@ -83,3 +83,45 @@ def test_auto_starts_at_the_top_when_the_pointer_is_already_under_it(director):
     director.caption("Now send it", position="auto")
 
     assert _edge(director) == "top"
+
+
+def _keys(d: Director) -> dict:
+    return d._page.eval_on_selector(
+        "#demo-keys",
+        """el => ({shown: el.classList.contains("shown"), text: el.innerText.replace(/\\s+/g, " "),
+                  top: el.getBoundingClientRect().top, bottom: el.getBoundingClientRect().bottom})""",
+    )
+
+
+def _caption_box(d: Director) -> dict:
+    return d._page.eval_on_selector("#demo-caption", "el => el.getBoundingClientRect().toJSON()")
+
+
+def test_key_badge_sits_next_to_the_caption_and_fades(director):
+    director.caption("Ctrl+Enter sends it")
+    director._page.wait_for_timeout(400)
+
+    director.press("Control+Enter")
+
+    badge = _keys(director)
+    assert badge["shown"]
+    assert badge["text"] == "Ctrl + Enter"
+    assert badge["bottom"] < _caption_box(director)["top"]  # just above a bottom caption
+    director._page.wait_for_timeout(300)  # 1.8 s at --speed 10, minus the time already waited
+    assert not _keys(director)["shown"]
+
+
+def test_key_badge_goes_below_a_top_caption(director):
+    director.caption("At the top", position="top")
+    director._page.wait_for_timeout(400)
+
+    director.press("Control+Enter")
+
+    assert _keys(director)["top"] > _caption_box(director)["bottom"]
+
+
+def test_key_badge_without_a_caption_sits_at_the_bottom(director):
+    director.press("Control+Enter")
+
+    assert _keys(director)["shown"]
+    assert director._page.eval_on_selector("#demo-keys", "el => getComputedStyle(el).bottom") == "40px"

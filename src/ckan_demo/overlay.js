@@ -1,6 +1,7 @@
 /**
  * Injected into every page: a pointer and click ripples (Playwright's video
- * has none), the caption bar, title cards, and CSS hiding CKAN's dev chrome.
+ * has none), the caption bar, key badges, title cards, and CSS hiding CKAN's
+ * dev chrome.
  */
 (() => {
     if (window.__demo) return;
@@ -12,6 +13,7 @@
         html.demo-screenshot #demo-cursor,
         html.demo-screenshot #demo-caption,
         html.demo-screenshot #demo-card,
+        html.demo-screenshot #demo-keys,
         html.demo-screenshot .demo-ripple { display: none !important; }
 
         #demo-cursor {
@@ -46,6 +48,24 @@
         #demo-caption.top { top: 40px; bottom: auto; transform: translate(-50%, -12px); }
         #demo-caption.shown { opacity: 1; transform: translate(-50%, 0); }
 
+        #demo-keys {
+            position: fixed; z-index: 2147483645; left: 50%; bottom: 40px;
+            display: flex; align-items: center; gap: 8px;
+            transform: translate(-50%, 8px); opacity: 0;
+            padding: 10px 16px; border-radius: 12px;
+            background: rgba(15, 23, 42, 0.92); color: #cbd5e1;
+            font: 600 20px/1 "Noto Sans", system-ui, sans-serif;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            pointer-events: none;
+        }
+        #demo-keys.shown { opacity: 1; transform: translate(-50%, 0); }
+        #demo-keys kbd {
+            min-width: 20px; padding: 7px 11px; border-radius: 7px; text-align: center;
+            background: #f8fafc; color: #0f172a; font: inherit;
+            box-shadow: inset 0 -3px 0 #cbd5e1;
+        }
+
         #demo-card {
             position: fixed; z-index: 2147483644; inset: 0;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -66,7 +86,8 @@
                   fill="#111827" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
         </svg>`;
 
-    let cursor, caption, card;
+    let cursor, caption, keys, card;
+    let keysHide = null;  // pending fade-out of the key badge
     let pointer = null;  // last pointer position
     let captionMode = "bottom";  // "top", "bottom" or "auto"
     let captionMove = null;  // pending move to the other edge
@@ -81,9 +102,11 @@
         cursor.innerHTML = cursorSvg;
         caption = document.createElement("div");
         caption.id = "demo-caption";
+        keys = document.createElement("div");
+        keys.id = "demo-keys";
         card = document.createElement("div");
         card.id = "demo-card";
-        document.body.append(cursor, caption, card);
+        document.body.append(cursor, caption, keys, card);
 
         // Restore the pointer position from the previous page.
         const last = JSON.parse(sessionStorage.getItem("demo-cursor") || "null");
@@ -178,6 +201,24 @@
             const edge = edgeOf();
             const other = edge === "top" ? "bottom" : "top";
             if (covers(box, edge) && !covers(box, other)) place(other);
+        },
+        // A badge of keycaps, e.g. ["Ctrl", "Enter"], for `ms` milliseconds:
+        // just above a bottom caption, below a top one, else at the bottom.
+        keys(caps, ms) {
+            clearTimeout(keysHide);
+            keys.innerHTML = caps.map((cap) => `<kbd>${escape(cap)}</kbd>`).join("<span>+</span>");
+            keys.style.top = keys.style.bottom = "";
+            if (caption.classList.contains("shown")) {
+                const rect = caption.getBoundingClientRect();
+                if (edgeOf() === "top") {
+                    keys.style.top = rect.bottom + 12 + "px";
+                    keys.style.bottom = "auto";
+                } else {
+                    keys.style.bottom = window.innerHeight - rect.top + 12 + "px";
+                }
+            }
+            keys.classList.add("shown");
+            keysHide = setTimeout(() => keys.classList.remove("shown"), ms);
         },
         card(kicker, title, text) {
             if (!title) {

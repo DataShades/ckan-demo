@@ -114,7 +114,7 @@ def search(d: Director) -> None:
     search_box = d.page.get_by_placeholder(re.compile("Search", re.I)).first
     d.type(search_box, term, clear=True)
     with d.navigates():
-        d.press("Enter")
+        d.press("Enter", badge=True)
     d.caption(f"Here's what matches “{term}”", hold=3, position="top")
 
     facet = first(d.page.locator(FACET_LINKS))

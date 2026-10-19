@@ -194,8 +194,10 @@ def test_add_music_failure_keeps_the_silent_video(tmp_path):
     not_audio = tmp_path / "song.mp3"
     not_audio.write_text("not audio")
 
-    with pytest.raises(video.subprocess.CalledProcessError):
+    with pytest.raises(video.subprocess.CalledProcessError) as raised:
         video.add_music(clip, not_audio)
+
+    assert "Invalid data" in raised.value.stderr  # captured for the error message, not printed
 
     assert clip.read_bytes() == before
     assert not (tmp_path / "demo.music.mp4").exists()

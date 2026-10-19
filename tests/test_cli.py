@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 import textwrap
 
 import pytest
@@ -240,3 +241,18 @@ def test_no_music_by_default(runner, scenario_file, monkeypatch):
 
     assert result.exit_code == 0, result.output
     assert added == []
+
+
+def test_music_failure_says_why(runner, scenario_file, monkeypatch, tmp_path):
+    def broken(target, music, **kw):
+        raise subprocess.CalledProcessError(1, "ffmpeg", stderr="Error opening input files: Invalid data found\n")
+
+    _fake_run(monkeypatch)
+    monkeypatch.setattr("ckan_demo.cli.video.add_music", broken)
+    song = tmp_path / "song.mp3"
+    song.write_bytes(b"")
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup", "--music", str(song)])
+
+    assert result.exit_code == 1
+    assert "(Error opening input files: Invalid data found); the silent video is" in result.output

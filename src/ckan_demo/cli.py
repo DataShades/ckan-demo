@@ -292,7 +292,11 @@ def record_command(
         try:
             video.add_music(target, soundtrack, volume=video.DEFAULT_MUSIC_VOLUME if volume is None else volume)
         except subprocess.CalledProcessError as error:
-            raise click.ClickException(f"cannot add music from {soundtrack}; the silent video is {target}") from error
+            lines = (error.stderr or "").strip().splitlines()
+            reason = f" ({lines[-1]})" if lines else ""
+            raise click.ClickException(
+                f"cannot add music from {soundtrack}{reason}; the silent video is {target}"
+            ) from error
     click.echo(f"Video: {target}")
 
     if gif:

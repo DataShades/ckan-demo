@@ -42,9 +42,8 @@ are joined in scenario order as usual. Scenarios without the flag ignore
 - **A scene fails**: the error names the scene, and the clips recorded before
   it are kept. Fix it and run `--scenes` from that scene on, or the whole
   story if scenes depend on each other.
-- **Logging in fails**: run `ckan-demo setup` (with an API token, or
-  `--ckan-ini` for local seeding) so the demo users exist with the
-  scenario's passwords.
+- **Logging in fails**: record with an API token or `--ckan-ini`, so the demo
+  users are created with the scenario's passwords.
 
 ## Development portals
 

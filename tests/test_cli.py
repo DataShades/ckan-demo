@@ -55,14 +55,6 @@ def test_list_shows_users_scenes_and_seeding(runner, scenario_file):
     assert "Seeding: local (needs the portal's ckan.ini (--ckan-ini or $CKAN_INI))" in result.output
 
 
-def test_setup_without_requirements_explains_what_is_needed(runner, scenario_file):
-    result = runner.invoke(cli, ["setup", str(scenario_file)])
-
-    assert result.exit_code == 1
-    assert "Error: seeding this scenario needs" in result.output
-    assert "--ckan-ini" in result.output
-
-
 def test_missing_scenario_file_is_a_usage_error(runner, tmp_path):
     result = runner.invoke(cli, ["list", str(tmp_path / "missing.py")])
 
@@ -70,13 +62,21 @@ def test_missing_scenario_file_is_a_usage_error(runner, tmp_path):
     assert "does not exist" in result.output
 
 
-def test_environment_variables_reach_the_portal(runner, scenario_file, monkeypatch):
+def _capture_portal(monkeypatch):
+    """Fake seeding, recording and joining; keep the portal record was given."""
     seen = {}
-    monkeypatch.setattr(seeding, "run_setup", lambda scenario, portal, **kw: seen.update(portal=portal))
+    monkeypatch.setattr(seeding, "seed_before_recording", lambda scenario, portal, **kw: seen.update(portal=portal))
+    monkeypatch.setattr("ckan_demo.cli.record", lambda *a, **kw: [])
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: target)
+    return seen
+
+
+def test_environment_variables_reach_the_portal(runner, scenario_file, monkeypatch):
+    seen = _capture_portal(monkeypatch)
     monkeypatch.setenv("CKAN_INI", "/env/ckan.ini")
     monkeypatch.setenv("CKAN_DEMO_API_TOKEN", "env-token")
 
-    result = runner.invoke(cli, ["setup", str(scenario_file), "--portal", "http://flag.test"])
+    result = runner.invoke(cli, ["record", str(scenario_file), "--portal", "http://flag.test"])
 
     assert result.exit_code == 0, result.output
     assert str(seen["portal"].ckan_ini) == "/env/ckan.ini"
@@ -85,14 +85,20 @@ def test_environment_variables_reach_the_portal(runner, scenario_file, monkeypat
 
 
 def test_flags_beat_environment_variables(runner, scenario_file, monkeypatch):
-    seen = {}
-    monkeypatch.setattr(seeding, "run_setup", lambda scenario, portal, **kw: seen.update(portal=portal))
+    seen = _capture_portal(monkeypatch)
     monkeypatch.setenv("CKAN_INI", "/env/ckan.ini")
 
-    result = runner.invoke(cli, ["setup", str(scenario_file), "--ckan-ini", "/flag/ckan.ini"])
+    result = runner.invoke(cli, ["record", str(scenario_file), "--ckan-ini", "/flag/ckan.ini"])
 
     assert result.exit_code == 0, result.output
     assert str(seen["portal"].ckan_ini) == "/flag/ckan.ini"
+
+
+def test_there_is_no_setup_command(runner):
+    result = runner.invoke(cli, ["setup", "x.py"])
+
+    assert result.exit_code == 2
+    assert "No such command 'setup'" in result.output
 
 
 @pytest.mark.parametrize(("value", "size"), [("1920x1080", (1920, 1080)), (" 1280 X 720 ", (1280, 720))])

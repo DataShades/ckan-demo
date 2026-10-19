@@ -56,7 +56,7 @@ def _login(browser: Browser, options: Options, user: User, path: Path) -> Path:
     if "/user/login" in page.url:
         context.close()
         raise RuntimeError(
-            f"could not log in as {user.name!r}. Run `ckan-demo setup` (with an API token) to create the demo users."
+            f"could not log in as {user.name!r}. Record with an API token or --ckan-ini so the demo users are created."
         )
     context.storage_state(path=str(path))
     context.close()

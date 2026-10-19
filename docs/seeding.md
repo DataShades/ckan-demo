@@ -53,8 +53,7 @@ Errors are ckanapi's: `ckanapi.NotFound`, `ckanapi.ValidationError`,
 `ckanapi.NotAuthorized`.
 
 If the run lacks what the scenario needs, `record` warns and records the portal
-as it is, and `setup` stops with an error. `ckan-demo list` shows which way a
-scenario seeds.
+as it is. `ckan-demo list` shows which way a scenario seeds.
 
 ### Optional seeding
 
@@ -194,8 +193,3 @@ With `--reset`, delete what the demo owns and rebuild it, so the recording
 starts from a known state. What "owns" means is the scenario's call; deleting
 every record of a kind is only acceptable on a development portal, so say so
 in the scenario's README.
-
-## Only seeding
-
-`ckan-demo setup SCENARIO [--reset]` seeds without recording, which is handy
-before a live demo.

@@ -64,7 +64,6 @@ uploads; without either (or without permission) it records the portal as it is.
 | Command | |
 | --- | --- |
 | `ckan-demo record SCENARIO` | seed (when the run has what the scenario needs), record every scene, join them |
-| `ckan-demo setup SCENARIO` | only seed: create the demo users and run the scenario's setup hook |
 | `ckan-demo list SCENARIO` | show the scenario's users and scenes |
 
 `record` options:

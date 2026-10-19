@@ -163,19 +163,6 @@ def list_command(scenario: Path) -> None:
         click.echo(f"  {scene.name:24} {scene.user or 'anonymous':12} {scene.description}")
 
 
-@cli.command()
-@_portal_options
-def setup(scenario: Path, portal: str | None, api_token: str | None, ckan_ini: Path | None, reset: bool) -> None:
-    """Seed the portal without recording."""
-    with _clean_errors():
-        loaded = load_scenario(scenario)
-        config = load_config(scenario)
-        site, _ = resolve_settings(loaded, config, portal=portal, api_token=api_token, ckan_ini=ckan_ini)
-        _describe_config(config)
-        click.echo("Preparing data…")
-        seeding.run_setup(loaded, site, reset=reset, log=click.echo)
-
-
 @cli.command("record", short_help="Seed, record every scene and join them into one video.")
 @_portal_options
 @click.option("--no-setup", is_flag=True, help="Record without seeding.")

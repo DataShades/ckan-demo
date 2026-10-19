@@ -11,7 +11,10 @@ class FakePage:
         self.clock = clock
         self.waits: list[float] = []
         self.captions: list[str | None] = []
+        self.positions: list[str] = []
+        self.avoided: list[dict] = []
         self.cards: list[list[str] | None] = []
+        self.mouse = self
 
     def wait_for_timeout(self, ms):
         self.waits.append(ms / 1000)
@@ -19,9 +22,27 @@ class FakePage:
 
     def evaluate(self, script, arg=None):
         if "caption" in script:
-            self.captions.append(arg)
+            text, position = arg
+            self.captions.append(text)
+            self.positions.append(position)
+        elif "avoid" in script:
+            self.avoided.append(arg)
         elif "card" in script:
             self.cards.append(arg)
+
+    def move(self, x, y, steps=1):
+        pass
+
+
+BOX = {"x": 100, "y": 1000, "width": 80, "height": 30}
+
+
+class FakeLocator:
+    def scroll_into_view_if_needed(self):
+        pass
+
+    def bounding_box(self):
+        return BOX
 
 
 class Clock:
@@ -150,3 +171,40 @@ def test_using_the_page_hides_the_card_once(clock):
     d.page  # noqa: B018
 
     assert page.cards == [["", "The end", ""], None]
+
+
+def test_captions_default_to_the_bottom(clock):
+    d = _director(clock)
+
+    d.caption("Hi")
+    d.caption("There", position="top")
+
+    assert d.page.positions == ["bottom", "top"]
+
+
+def test_caption_position_is_checked(clock):
+    with pytest.raises(ValueError, match="bottom, top, auto"):
+        _director(clock).caption("Hi", position="left")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    ("position", "captions", "avoided"),
+    [("auto", True, [BOX]), ("bottom", True, []), ("top", True, []), ("auto", False, [])],
+)
+def test_only_auto_captions_get_out_of_the_pointers_way(clock, position, captions, avoided):
+    d = _director(clock, captions=captions)
+    d.caption("Assign it to yourself", position=position)
+
+    d.point(FakeLocator())
+
+    assert d._page.avoided == avoided
+
+
+def test_no_avoiding_once_the_caption_is_hidden(clock):
+    d = _director(clock)
+    d.caption("Assign it to yourself", position="auto")
+    d.caption(None)
+
+    d.point(FakeLocator())
+
+    assert d._page.avoided == []

@@ -115,19 +115,19 @@ def search(d: Director) -> None:
     d.type(search_box, term, clear=True)
     with d.navigates():
         d.press("Enter")
-    d.caption(f"Here's what matches “{term}”", hold=3)
+    d.caption(f"Here's what matches “{term}”", hold=3, position="top")
 
     facet = first(d.page.locator(FACET_LINKS))
 
     if facet:
-        d.caption("Use the filters on the left to narrow it down", hold="read")
+        d.caption("Use the filters on the left to narrow it down", hold="read", position="top")
         with d.navigates():
             d.click(facet)
         d.pause(2)
 
     order = first(d.page.locator("#field-order-by"))
     if order and order.locator("option[value='metadata_modified desc']").count():
-        d.caption("Sort by last modified to see the newest first", hold="read")
+        d.caption("Sort by last modified to see the newest first", hold="read", position="top")
         with d.navigates():
             d.select(order, value="metadata_modified desc")
         d.pause(2)

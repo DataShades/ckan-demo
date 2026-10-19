@@ -59,7 +59,7 @@ there is time to read. Durations are in seconds at `--speed 1`.
 | `d.press(key)` | press a key (`"Enter"`, `"Escape"`, `"Control+Enter"`) |
 | `d.point(locator)` | glide to an element without clicking, to draw attention |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
-| `d.caption(text, hold=0)` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read |
+| `d.caption(text, hold=0, position="bottom")` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read. `position=` is `"bottom"`, `"top"` or `"auto"` (see below) |
 | `d.card(kicker, title, text="", hold=3)` | full-screen title card; it fades out at the next action or use of `d.page`, so a card that ends the scene stays up |
 | `d.pause(seconds)` | hold still |
 | `d.screenshot(name, locator=None)` | save `screenshots/<name>.png` without the overlay |
@@ -120,6 +120,21 @@ d.caption("Use the filters on the left to narrow it down", hold="read")
 d.click(facet)
 d.caption(f"Here's what matches “{term}”", hold=3)
 ```
+
+Captions sit at the bottom. When one would cover what the scene is about,
+put it at the top with `position="top"`, or use `position="auto"`: it starts
+at the bottom (at the top if the pointer is already there) and moves to the
+top, with a quick fade, when the pointer is about to go to something it
+covers. It stays there until the next caption.
+
+```python
+d.caption("Assign the ticket to yourself", position="auto")
+d.click(page.get_by_role("button", name="Assign to me"))  # low on the page: the caption moves up
+```
+
+`auto` only knows where the pointer goes. Something that appears under the
+caption without being clicked, such as a toast or a dialog's buttons, needs
+`position="top"`.
 
 Use cards to open the video and to mark a change of person or topic.
 

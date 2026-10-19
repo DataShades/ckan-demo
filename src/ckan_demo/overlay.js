@@ -43,6 +43,7 @@
             transition: opacity 0.3s ease, transform 0.3s ease;
             pointer-events: none;
         }
+        #demo-caption.top { top: 40px; bottom: auto; transform: translate(-50%, -12px); }
         #demo-caption.shown { opacity: 1; transform: translate(-50%, 0); }
 
         #demo-card {
@@ -66,6 +67,9 @@
         </svg>`;
 
     let cursor, caption, card;
+    let pointer = null;  // last pointer position
+    let captionMode = "bottom";  // "top", "bottom" or "auto"
+    let captionMove = null;  // pending move to the other edge
 
     function mount() {
         const style = document.createElement("style");
@@ -87,6 +91,7 @@
     }
 
     function move(x, y) {
+        pointer = { x, y, width: 22, height: 22 };
         cursor.style.left = x + "px";
         cursor.style.top = y + "px";
         sessionStorage.setItem("demo-cursor", JSON.stringify({ x, y }));
@@ -111,14 +116,68 @@
         return div.innerHTML;
     };
 
+    // ── Caption position ─────────────────────────────────────────────────
+
+    const GAP = 16;  // clearance kept between a caption and what it avoids
+
+    function edgeOf() {
+        return caption.classList.contains("top") ? "top" : "bottom";
+    }
+
+    // Where the caption is, or would be at `edge`, in viewport pixels.
+    function captionRect(edge) {
+        const rect = caption.getBoundingClientRect();
+        const height = rect.height;
+        const top = edge === "top" ? 40 : window.innerHeight - 40 - height;
+        return { left: rect.left, right: rect.right, top, bottom: top + height };
+    }
+
+    function covers(box, edge) {
+        if (!box) return false;
+        const rect = captionRect(edge);
+        return box.x < rect.right + GAP && box.x + box.width > rect.left - GAP
+            && box.y < rect.bottom + GAP && box.y + box.height > rect.top - GAP;
+    }
+
+    // Put the caption at `edge`; a visible one fades out and back in there.
+    function place(edge) {
+        clearTimeout(captionMove);
+        captionMove = null;
+        if (edgeOf() === edge) return;
+        if (!caption.classList.contains("shown")) {
+            caption.classList.toggle("top", edge === "top");
+            return;
+        }
+        caption.classList.remove("shown");
+        captionMove = setTimeout(() => {
+            caption.classList.toggle("top", edge === "top");
+            caption.classList.add("shown");
+            captionMove = null;
+        }, 300);
+    }
+
     window.__demo = {
-        caption(text) {
+        caption(text, position = "bottom") {
             if (!text) {
+                clearTimeout(captionMove);
+                captionMove = null;
                 caption.classList.remove("shown");
                 return;
             }
+            captionMode = position;
             caption.textContent = text;
-            caption.classList.add("shown");
+            // Auto starts at the bottom, unless the pointer is already there.
+            const edge = position === "top" || (position === "auto" && covers(pointer, "bottom")) ? "top" : "bottom";
+            place(edge);
+            if (!captionMove) caption.classList.add("shown");
+        },
+        // Before the pointer goes to `box`: an auto caption that would cover
+        // it moves to the other edge, if that one is clear.
+        avoid(box) {
+            if (captionMode !== "auto" || !caption.classList.contains("shown") || captionMove) return;
+            const edge = edgeOf();
+            const other = edge === "top" ? "bottom" : "top";
+            if (covers(box, edge) && !covers(box, other)) place(other);
         },
         card(kicker, title, text) {
             if (!title) {

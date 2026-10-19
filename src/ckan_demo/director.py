@@ -24,6 +24,10 @@ def reading_time(text: str) -> float:
     return max(minimum, base + len(text.split()) * per_word)
 
 
+CaptionPosition = Literal["bottom", "top", "auto"]
+CAPTION_POSITIONS: tuple[CaptionPosition, ...] = ("bottom", "top", "auto")
+
+
 @dataclass(frozen=True)
 class Options:
     """Settings shared by every scene in a run."""
@@ -50,6 +54,7 @@ class Director:
         self.lead_in = 0.0
         # Current caption and when it appeared.
         self._caption: str | None = None
+        self._caption_position: CaptionPosition = "bottom"
         self._caption_shown_at = 0.0
         self._card_shown = False
 
@@ -65,21 +70,30 @@ class Director:
         """Hold still."""
         self._page.wait_for_timeout(seconds * 1000 / self.options.speed)
 
-    def caption(self, text: str | None, hold: float | Literal["read"] = 0) -> None:
+    def caption(
+        self, text: str | None, hold: float | Literal["read"] = 0, *, position: CaptionPosition = "bottom"
+    ) -> None:
         """Show a caption (``None`` hides it), then hold.
 
         ``hold`` is seconds, or ``"read"`` for the caption's reading time. The
         previous caption first stays up until it's been readable. Pacing is
         the same with ``--no-captions``.
+
+        ``position`` is ``"bottom"``, ``"top"`` or ``"auto"``: at the bottom,
+        moving to the top when the pointer is about to go somewhere the
+        caption covers.
         """
         if isinstance(hold, str) and hold != "read":
             raise ValueError(f'hold must be a number of seconds or "read", not {hold!r}')
+        if position not in CAPTION_POSITIONS:
+            raise ValueError(f"position must be one of {', '.join(CAPTION_POSITIONS)}, not {position!r}")
 
         self._hide_card()
         self.wait_for_reading()
         if self.options.captions:
-            self._page.evaluate("text => window.__demo.caption(text)", text)
+            self._page.evaluate("([text, position]) => window.__demo.caption(text, position)", [text, position])
         self._caption = text
+        self._caption_position = position
         self._caption_shown_at = time.monotonic()
 
         if hold == "read":
@@ -142,6 +156,8 @@ class Director:
         box = locator.bounding_box()
         if box is None:
             raise AssertionError(f"{locator} is not visible")
+        if self._caption and self._caption_position == "auto" and self.options.captions:
+            self._page.evaluate("box => window.__demo.avoid(box)", box)
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
         steps = max(12, min(45, int(math.dist((self.x, self.y), (x, y)) / 14)))
         self._page.mouse.move(x, y, steps=steps)

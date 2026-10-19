@@ -125,7 +125,7 @@ Use cards to open the video and to mark a change of person or topic.
 
 Record without captions (`--no-captions`) when you will narrate.
 
-## Stills for docs
+## Screenshots for docs
 
 `d.screenshot("queue")` saves `screenshots/queue.png` in the output folder,
 without the pointer or the caption. Pass a locator to capture one element.

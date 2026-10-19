@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import re
+import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, TypeVar
@@ -64,6 +65,27 @@ def resolve_transition(flag: video.Transition | None, scenario: Scenario, config
             except ValueError as error:
                 raise ConfigError(f"{source}: {error}") from error
     return video.DEFAULT_TRANSITION
+
+
+def resolve_music(
+    flag: Path | None, no_music: bool, config: Config, *, warn: Callable[[str], object] = print
+) -> Path | None:
+    """``--no-music``, then the flag, then config. Checked before recording
+    so a typo doesn't cost a whole run.
+
+    A missing ``--music`` file is an error. The config's may be missing on
+    purpose (music is often kept out of git), so it's only a warning.
+    """
+    if no_music:
+        return None
+    if flag is not None:
+        if not flag.is_file():
+            raise ConfigError(f"--music: {flag} is not a file")
+        return flag
+    if config.music is not None and not config.music.is_file():
+        warn(f"warning: {config.source}: music {config.music} is not a file, recording without music")
+        return None
+    return config.music
 
 
 @contextlib.contextmanager
@@ -190,11 +212,24 @@ def list_command(scenario: Path) -> None:
     metavar="cut|fade[:S]|crossfade[:S]",
     help="Between scenes. [default: the scenario's, config transition, or fade:0.4]",
 )
+@click.option(
+    "--music",
+    type=click.Path(dir_okay=False, path_type=Path),
+    metavar="FILE",
+    help="Background music for the whole video: looped or cut to fit, faded in and out. [default: config music]",
+)
+@click.option("--no-music", is_flag=True, help="No background music, even if the config sets some.")
+@click.option(
+    "--music-volume",
+    type=float,
+    metavar="DB",
+    help=f"Music level in dB. [default: config music-volume, or {video.DEFAULT_MUSIC_VOLUME:g}]",
+)
 @click.option("--gif", is_flag=True, help="Also write a GIF next to the MP4.")
 @click.option(
     "--output",
     type=click.Path(file_okay=False, path_type=Path),
-    help="Where clips, video and stills go. [default: config output, or ./demo-output/<scenario title>]",
+    help="Where clips, video and screenshots go. [default: config output, or ./demo-output/<scenario title>]",
 )
 def record_command(
     scenario: Path,
@@ -210,6 +245,9 @@ def record_command(
     headed: bool,
     jobs: int,
     transition: video.Transition | None,
+    music: Path | None,
+    no_music: bool,
+    music_volume: float | None,
     gif: bool,
     output: Path | None,
 ) -> None:
@@ -222,6 +260,7 @@ def record_command(
         )
         selected = loaded.select(scenes.split(",") if scenes else None)
         effect = resolve_transition(transition, loaded, config)
+        soundtrack = resolve_music(music, no_music, config, warn=lambda line: click.echo(line, err=True))
         if jobs > 1 and not loaded.independent_scenes:
             click.echo("warning: scenes may depend on each other, recording one at a time", err=True)
             jobs = 1
@@ -248,6 +287,12 @@ def record_command(
     except video.FfmpegMissing as error:
         click.echo(f"{error}. The scenes are in {output_dir}/ as .webm files.")
         return
+    if soundtrack:
+        volume = music_volume if music_volume is not None else config.music_volume
+        try:
+            video.add_music(target, soundtrack, volume=video.DEFAULT_MUSIC_VOLUME if volume is None else volume)
+        except subprocess.CalledProcessError as error:
+            raise click.ClickException(f"cannot add music from {soundtrack}; the silent video is {target}") from error
     click.echo(f"Video: {target}")
 
     if gif:

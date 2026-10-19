@@ -6,7 +6,7 @@ import pytest
 from click.testing import CliRunner
 
 from ckan_demo import Scenario, seeding
-from ckan_demo.cli import SizeType, cli, resolve_transition
+from ckan_demo.cli import SizeType, cli, resolve_music, resolve_transition
 from ckan_demo.config import Config, ConfigError
 from ckan_demo.video import Transition
 
@@ -177,3 +177,66 @@ def test_jobs_fall_back_to_one_without_independent_scenes(runner, scenario_file,
     assert result.exit_code == 0, result.output
     assert seen["jobs"] == 1
     assert "recording one at a time" in result.output
+
+
+def test_music_precedence_and_missing_files(tmp_path):
+    flag, configured = tmp_path / "flag.mp3", tmp_path / "config.mp3"
+    flag.write_bytes(b"")
+    configured.write_bytes(b"")
+    config = Config(source=tmp_path / "pyproject.toml", music=configured)
+
+    assert resolve_music(None, False, Config()) is None
+    assert resolve_music(None, False, config) == configured
+    assert resolve_music(flag, False, config) == flag
+    assert resolve_music(flag, True, config) is None
+
+
+def test_missing_config_music_only_warns(tmp_path):
+    warnings = []
+    config = Config(source=tmp_path / "pyproject.toml", music=tmp_path / "missing.mp3")
+
+    assert resolve_music(None, False, config, warn=warnings.append) is None
+    assert len(warnings) == 1
+    assert "missing.mp3 is not a file, recording without music" in warnings[0]
+    # --no-music silences it.
+    assert resolve_music(None, True, config, warn=warnings.append) is None
+    assert len(warnings) == 1
+
+
+def _fake_run(monkeypatch):
+    monkeypatch.setattr("ckan_demo.cli.record", lambda *a, **kw: [])
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: target)
+    added = []
+    monkeypatch.setattr("ckan_demo.cli.video.add_music", lambda target, music, **kw: added.append((music, kw)))
+    return added
+
+
+def test_missing_music_fails_before_recording(runner, scenario_file, monkeypatch):
+    monkeypatch.setattr("ckan_demo.cli.record", lambda *a, **kw: pytest.fail("recorded anyway"))
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup", "--music", "nope.mp3"])
+
+    assert result.exit_code == 1
+    assert "--music: nope.mp3 is not a file" in result.output
+
+
+def test_music_is_added_to_the_joined_video(runner, scenario_file, monkeypatch, tmp_path):
+    added = _fake_run(monkeypatch)
+    song = tmp_path / "song.mp3"
+    song.write_bytes(b"")
+
+    result = runner.invoke(
+        cli, ["record", str(scenario_file), "--no-setup", "--music", str(song), "--music-volume", "-20"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert added == [(song, {"volume": -20.0})]
+
+
+def test_no_music_by_default(runner, scenario_file, monkeypatch):
+    added = _fake_run(monkeypatch)
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup"])
+
+    assert result.exit_code == 0, result.output
+    assert added == []

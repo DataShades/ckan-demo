@@ -80,10 +80,13 @@ uploads; without either (or without permission) it records the portal as it is.
 | `--speed X` | `1.0` | pace; `1.3` is 30% faster |
 | `--no-captions` | | for a voice-over |
 | `--transition T` | scenario's, config, else `fade:0.4` | between scenes: `cut`, `fade[:seconds]` (through black) or `crossfade[:seconds]` |
+| `--music FILE` | config | background music for the whole video: looped or cut to fit, faded in and out |
+| `--music-volume DB` | config, else `-12` | music level in dB |
+| `--no-music` | | leave the music out (e.g. for a voice-over), even if the config sets some |
 | `--gif` | | also write a GIF (best for short scenes) |
 | `--headed` | | watch the browser while it records |
 | `--jobs N` | `1` | record N scenes at once; only for scenarios with `independent_scenes=True` |
-| `--output DIR` | config, else `demo-output/<title>` | where clips, video and stills go |
+| `--output DIR` | config, else `demo-output/<title>` | where clips, video and screenshots go |
 
 ## Configuration
 
@@ -96,6 +99,8 @@ portal = "http://127.0.0.1:5000"
 output = "demo/output"
 ckan-ini = "../config/ckan.ini"
 transition = "crossfade:0.6"
+music = "demo/background.mp3"
+music-volume = -15
 ```
 
 - Paths are relative to that `pyproject.toml`.
@@ -111,7 +116,7 @@ transition = "crossfade:0.6"
 ## Documentation
 
 - [Writing scenarios](docs/scenarios.md): scenes, users, the `Director`
-  helpers, stills
+  helpers, screenshots
 - [Seeding](docs/seeding.md): demo users, seeding through the API or
   locally with your test factories, where seeding code lives, `--reset`
 - [Tips and troubleshooting](docs/tips.md): pacing, flaky steps, dev-only

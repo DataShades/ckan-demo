@@ -130,3 +130,72 @@ def test_missing_ffmpeg_is_reported(monkeypatch):
         video.join([Clip(Path("a.webm"), 0)], Path("out.mp4"))
     with pytest.raises(video.FfmpegMissing, match="ffmpeg"):
         video.join([Clip(Path("a.webm"), 0)], Path("out.mp4"), transition=Transition.parse("cut"))
+
+
+def test_music_is_trimmed_faded_and_mixed_under_a_copied_video():
+    command = video.music_command(Path("v.mp4"), Path("song.mp3"), Path("out.mp4"), length=20.0, volume=-15)
+
+    assert command[command.index("-stream_loop") + 1] == "-1"  # loops a short song
+    assert command[command.index("-stream_loop") + 3] == "song.mp3"
+    graph = _graph(command)
+    assert "atrim=duration=20.000" in graph
+    assert "volume=-15dB" in graph
+    assert "afade=t=in:st=0:d=1.00" in graph
+    assert "afade=t=out:st=17.000:d=3.00" in graph
+    assert command[command.index("-c:v") + 1] == "copy"
+    assert command[command.index("-t") + 1] == "20.000"
+
+
+def test_music_fades_shrink_for_short_videos():
+    graph = _graph(video.music_command(Path("v.mp4"), Path("s.mp3"), Path("o.mp4"), length=3.0))
+
+    assert "afade=t=in:st=0:d=0.75" in graph
+    assert "afade=t=out:st=2.000:d=1.00" in graph
+
+
+def _ffmpeg_or_skip() -> None:
+    if not (video.shutil.which("ffmpeg") and video.shutil.which("ffprobe")):
+        pytest.skip("needs ffmpeg")
+
+
+def _streams(path: Path) -> list[str]:
+    result = video.subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.split()
+
+
+@pytest.mark.parametrize("song_seconds", [1, 10])
+def test_add_music_matches_the_video_length(tmp_path, song_seconds):
+    _ffmpeg_or_skip()
+    clip, song = tmp_path / "demo.mp4", tmp_path / "song.wav"
+    run = video.subprocess.run
+    run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=64x64:r=30:d=4",
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", str(clip)], check=True)  # fmt: skip
+    run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", f"sine=frequency=440:duration={song_seconds}",
+         str(song)], check=True)  # fmt: skip
+
+    video.add_music(clip, song)
+
+    assert sorted(_streams(clip)) == ["audio", "video"]
+    assert video.duration(clip) == pytest.approx(4.0, abs=0.1)
+    assert sorted(tmp_path.iterdir()) == sorted([clip, song])  # no leftover partial file
+
+
+def test_add_music_failure_keeps_the_silent_video(tmp_path):
+    _ffmpeg_or_skip()
+    clip = tmp_path / "demo.mp4"
+    video.subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=s=64x64:d=1",
+                          "-pix_fmt", "yuv420p", str(clip)], check=True)  # fmt: skip
+    before = clip.read_bytes()
+    not_audio = tmp_path / "song.mp3"
+    not_audio.write_text("not audio")
+
+    with pytest.raises(video.subprocess.CalledProcessError):
+        video.add_music(clip, not_audio)
+
+    assert clip.read_bytes() == before
+    assert not (tmp_path / "demo.music.mp4").exists()

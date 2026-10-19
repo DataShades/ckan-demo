@@ -19,8 +19,9 @@ else:  # pragma: no cover
     import tomli as tomllib
 
 TABLE = "ckan-demo"
-_PATH_KEYS = {"ckan-ini", "output"}
+_PATH_KEYS = {"ckan-ini", "music", "output"}
 _STRING_KEYS = {"portal", "transition"}
+_NUMBER_KEYS = {"music-volume"}
 
 
 class ConfigError(Exception):
@@ -36,6 +37,8 @@ class Config:
     ckan_ini: Path | None = None
     output: Path | None = None
     transition: str | None = None
+    music: Path | None = None
+    music_volume: float | None = None
     keys: frozenset[str] = field(default_factory=frozenset)
 
 
@@ -64,14 +67,17 @@ def load_config(scenario_path: Path) -> Config:
     if not isinstance(table, dict):
         raise ConfigError(f"{pyproject}: [tool.{TABLE}] must be a table")
 
-    known = _PATH_KEYS | _STRING_KEYS
+    known = _PATH_KEYS | _STRING_KEYS | _NUMBER_KEYS
     unknown = sorted(set(table) - known)
     if unknown:
         raise ConfigError(
             f"{pyproject}: unknown key(s) in [tool.{TABLE}]: {', '.join(unknown)} (known: {', '.join(sorted(known))})"
         )
     for key, value in table.items():
-        if not isinstance(value, str) or not value:
+        if key in _NUMBER_KEYS:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ConfigError(f"{pyproject}: [tool.{TABLE}] {key} must be a number")
+        elif not isinstance(value, str) or not value:
             raise ConfigError(f"{pyproject}: [tool.{TABLE}] {key} must be a non-empty string")
 
     def path(key: str) -> Path | None:
@@ -83,5 +89,7 @@ def load_config(scenario_path: Path) -> Config:
         ckan_ini=path("ckan-ini"),
         output=path("output"),
         transition=table.get("transition"),
+        music=path("music"),
+        music_volume=float(table["music-volume"]) if "music-volume" in table else None,
         keys=frozenset(table),
     )

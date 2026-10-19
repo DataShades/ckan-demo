@@ -63,3 +63,23 @@ the video, so the size also decides CKAN's layout: at 1080p its content area
 leaves wide side margins, so text looks smaller. For demos of small UI
 (forms, dialogs), a smaller 16:9 size such as `--size 1280x720` makes it
 easier to read.
+
+## Background music
+
+`--music FILE` (or `music = "..."` in `[tool.ckan-demo]`) lays one track
+under the finished video, after the scenes are joined. A track shorter than
+the video loops, a longer one is cut where the video ends, and it fades in
+over 1 s and out over 3 s. The video stream is copied, so adding music doesn't
+re-encode or soften the picture.
+
+`--music-volume` is in dB relative to the track (`-12` by default). Most
+music is mastered loud, so going below `-12` suits a calm demo, and `0`
+plays the track as it is.
+
+The music is for videos that go out as they are. For a voice-over, record
+with `--no-captions --no-music` and mix the narration and music in a video
+editor, where the music can duck under the voice. Use music you're allowed to
+publish; ckan-demo doesn't ship any.
+
+A `music` file named in `[tool.ckan-demo]` that isn't there only gets a warning,
+and the video is recorded without music. A missing `--music` file is an error.

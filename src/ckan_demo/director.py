@@ -158,15 +158,15 @@ class Director:
         self.page.keyboard.press(key)
         self.pause(0.3)
 
-    # ── Stills ──────────────────────────────────────────────────────────────
+    # ── Screenshots ─────────────────────────────────────────────────────────
 
     def screenshot(self, name: str, locator: Locator | None = None) -> Path:
         """Save ``screenshots/<name>.png`` without the pointer or caption."""
         path = self.options.output / "screenshots" / f"{name}.png"
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.page.evaluate("() => document.documentElement.classList.add('demo-still')")
+        self.page.evaluate("() => document.documentElement.classList.add('demo-screenshot')")
         try:
             (locator or self.page).screenshot(path=str(path), animations="disabled")
         finally:
-            self.page.evaluate("() => document.documentElement.classList.remove('demo-still')")
+            self.page.evaluate("() => document.documentElement.classList.remove('demo-screenshot')")
         return path

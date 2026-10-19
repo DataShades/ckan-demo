@@ -87,3 +87,16 @@ def test_command_line_beats_config_beats_defaults():
         output=Path("/flag-out"),
     )
     assert (portal.url, portal.ckan_ini, output) == ("http://flag.test", Path("/flag.ini"), Path("/flag-out"))
+
+
+def test_music_is_a_path_and_its_volume_a_number(tmp_path):
+    config = load_config(_project(tmp_path, '[tool.ckan-demo]\nmusic = "demo/bed.mp3"\nmusic-volume = -18\n'))
+
+    assert config.music == (tmp_path / "demo" / "bed.mp3").resolve()
+    assert config.music_volume == -18.0
+
+
+@pytest.mark.parametrize("value", ['"-18"', "true"])
+def test_music_volume_must_be_a_number(tmp_path, value):
+    with pytest.raises(ConfigError, match="music-volume must be a number"):
+        load_config(_project(tmp_path, f"[tool.ckan-demo]\nmusic-volume = {value}\n"))

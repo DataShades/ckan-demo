@@ -8,10 +8,10 @@
     const css = `
         .debug, #flDebug { display: none !important; }
 
-        /* Hidden in stills (Director.screenshot). */
-        html.demo-still #demo-cursor,
-        html.demo-still #demo-caption,
-        html.demo-still .demo-ripple { display: none !important; }
+        /* Hidden in screenshots (Director.screenshot). */
+        html.demo-screenshot #demo-cursor,
+        html.demo-screenshot #demo-caption,
+        html.demo-screenshot .demo-ripple { display: none !important; }
 
         #demo-cursor {
             position: fixed; z-index: 2147483647; left: 0; top: 0;

@@ -1,4 +1,4 @@
-"""Joins clips into one video with ffmpeg."""
+"""Joins clips into one video with ffmpeg, and adds background music."""
 
 from __future__ import annotations
 
@@ -128,6 +128,38 @@ def join_command(
     ]  # fmt: skip
 
 
+DEFAULT_MUSIC_VOLUME = -12.0  # dB; a bed under the visuals, not the main sound
+
+
+def music_command(
+    video: Path,
+    music: Path,
+    output: Path,
+    *,
+    length: float,
+    volume: float = DEFAULT_MUSIC_VOLUME,
+    fade_in: float = 1.0,
+    fade_out: float = 3.0,
+) -> list[str]:
+    """ffmpeg command that lays ``music`` under the finished ``video``.
+
+    The music loops if it's shorter than the video, is cut where the video
+    ends and fades in and out. The video stream is copied, not re-encoded.
+    """
+    fade_in = min(fade_in, length / 4)
+    fade_out = min(fade_out, length / 3)
+    chain = (
+        f"[1:a]atrim=duration={length:.3f},asetpts=PTS-STARTPTS,volume={volume:g}dB,"
+        f"afade=t=in:st=0:d={fade_in:.2f},afade=t=out:st={length - fade_out:.3f}:d={fade_out:.2f}[music]"
+    )
+    return [
+        "ffmpeg", "-y", "-loglevel", "error", "-i", str(video), "-stream_loop", "-1", "-i", str(music),
+        "-filter_complex", chain, "-map", "0:v", "-map", "[music]",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{length:.3f}",
+        "-movflags", "+faststart", str(output),
+    ]  # fmt: skip
+
+
 def gif_command(video: Path, output: Path, *, width: int = 960, fps: int = 12) -> list[str]:
     """ffmpeg command for a GIF with its own palette."""
     scale = f"fps={fps},scale={width}:-1:flags=lanczos"
@@ -144,6 +176,21 @@ def join(clips: Sequence[Clip], output: Path, *, transition: Transition = DEFAUL
     command[0] = _ffmpeg()
     subprocess.run(command, check=True)
     return output
+
+
+def add_music(video: Path, music: Path, *, volume: float = DEFAULT_MUSIC_VOLUME) -> Path:
+    """Lay ``music`` under ``video`` in place. On failure the silent video
+    is left as it was."""
+    partial = video.with_name(f"{video.stem}.music{video.suffix}")
+    command = music_command(video, music, partial, length=duration(video), volume=volume)
+    command[0] = _ffmpeg()
+    try:
+        subprocess.run(command, check=True)
+    except subprocess.CalledProcessError:
+        partial.unlink(missing_ok=True)
+        raise
+    partial.replace(video)
+    return video
 
 
 def to_gif(video: Path, output: Path, *, width: int = 960) -> Path:

@@ -8,7 +8,7 @@ import contextlib
 import math
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
@@ -103,6 +103,7 @@ class Options:
     speed: float = 1.0
     output: Path = Path("demo-output")
     typing_delay_ms: float = 28
+    brand: dict[str, str] = field(default_factory=dict)
 
 
 class Director:
@@ -110,6 +111,9 @@ class Director:
 
     # Pointer positions per second while it moves.
     FPS = 60
+    # Seconds an opening card is up before the clip starts: the video lags
+    # the page a little.
+    CARD_MARGIN = 0.2
 
     def __init__(self, page: Page, options: Options) -> None:
         self._page = page
@@ -124,6 +128,8 @@ class Director:
         self._caption_position: CaptionPosition = "bottom"
         self._caption_shown_at = 0.0
         self._card_shown = False
+        # Nothing has happened since the first page loaded.
+        self._opening = False
 
     @property
     def page(self) -> Page:
@@ -181,15 +187,25 @@ class Director:
         """Show a full-screen title card for ``hold`` seconds.
 
         It stays up until the next action or use of ``d.page``, so a card
-        that ends the scene ends the clip.
+        that ends the scene ends the clip. One right after the scene's first
+        ``goto`` opens the clip: it's up from the first frame.
         """
         self.wait_for_reading()
-        self._page.evaluate("([k, t, x]) => window.__demo.card(k, t, x)", [kicker, title, text])
+        # Straight after the first page load, the card appears at once and
+        # the clip starts on it, so the page doesn't show before it.
+        opening, self._opening = self._opening, False
+        self._page.evaluate(
+            "([k, t, x, instant]) => window.__demo.card(k, t, x, instant)", [kicker, title, text, opening]
+        )
         self._card_shown = True
+        if opening:
+            self._page.wait_for_timeout(self.CARD_MARGIN * 1000)
+            self.lead_in = time.monotonic() - self.started
         self.pause(hold)
 
     def _hide_card(self) -> None:
-        """Fade out the title card, if one is up."""
+        """Fade out the title card, if one is up. Every action starts here."""
+        self._opening = False
         if not self._card_shown:
             return
         self._card_shown = False
@@ -206,6 +222,7 @@ class Director:
         self._page.mouse.move(self.x, self.y)
         if not self.lead_in:
             self.lead_in = time.monotonic() - self.started
+            self._opening = True
 
     @contextlib.contextmanager
     def navigates(self) -> Iterator[None]:

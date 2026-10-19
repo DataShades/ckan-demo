@@ -1,11 +1,12 @@
-"""The overlay's caption placement, in a real headless Chromium (no video)."""
+"""The overlay's captions, badges, cards and scrolling, in a real headless Chromium (no video)."""
 
 from __future__ import annotations
 
 import pytest
 
+from ckan_demo.config import Brand
 from ckan_demo.director import Director, Options
-from ckan_demo.recorder import OVERLAY
+from ckan_demo.recorder import OVERLAY, overlay_script
 
 PAGE = """
 <body style="margin:0; height:100vh">
@@ -209,3 +210,66 @@ def test_point_reveals_before_moving(tall):
 
     assert tall.evaluate("() => window.scrollY") > 2000
     assert d.y == pytest.approx(360, abs=2)
+
+
+def _card(page, brand: dict[str, str]) -> dict:
+    page.set_content("<body></body>")
+    page.add_script_tag(content=overlay_script(brand))
+    page.evaluate("() => window.__demo.card('Kicker', 'Title', 'Text')")
+    return page.evaluate(
+        """() => {
+            const style = (selector, property) => getComputedStyle(document.querySelector(selector))[property];
+            const logo = document.querySelector('#demo-card .logo');
+            return {
+                background: style('#demo-card', 'backgroundImage') + ' ' + style('#demo-card', 'backgroundColor'),
+                title: style('#demo-card h1', 'color'),
+                text: style('#demo-card p', 'color'),
+                kicker: style('#demo-card .kicker', 'color'),
+                logo: logo && logo.src,
+            };
+        }"""
+    )
+
+
+def test_card_defaults_to_the_built_in_gradient(chromium):
+    page = chromium.new_page()
+    card = _card(page, {})
+    page.close()
+
+    assert "linear-gradient" in card["background"]
+    assert "rgb(30, 58, 138)" in card["background"]  # #1e3a8a
+    assert card["title"] == "rgb(248, 250, 252)"
+    assert card["kicker"] == "rgb(147, 197, 253)"
+    assert card["logo"] is None
+
+
+def test_card_takes_the_brand(chromium, tmp_path):
+    logo = tmp_path / "logo.svg"
+    logo.write_text("<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'/>")
+    brand = Brand(logo=logo, background=("#ffffff",), text="#000000", accent="rgb(200 0 0)").overlay()
+
+    page = chromium.new_page()
+    card = _card(page, brand)
+    page.close()
+
+    assert card["background"] == "none rgb(255, 255, 255)"
+    assert card["title"] == "rgb(0, 0, 0)"
+    assert card["text"] in ("rgba(0, 0, 0, 0.8)", "color(srgb 0 0 0 / 0.8)")
+    assert card["kicker"] == "rgb(200, 0, 0)"
+    assert card["logo"].startswith("data:image/svg+xml;base64,")
+
+
+def test_instant_card_skips_the_fade_in(chromium):
+    page = chromium.new_page()
+    page.set_content("<body></body>")
+    page.add_script_tag(content=OVERLAY)
+
+    opacity = page.evaluate(
+        """() => {
+            window.__demo.card('', 'Title', '', true);
+            return getComputedStyle(document.getElementById('demo-card')).opacity;
+        }"""
+    )
+    page.close()
+
+    assert opacity == "1"

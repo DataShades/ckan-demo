@@ -105,7 +105,7 @@ def search(d: Director) -> None:
     term = search_term(d)
 
     d.goto("/")
-    d.card("CKAN", "Find open data", "Search, filter and explore datasets.", hold=3.5)
+    d.card("", "Find open data", "Search, filter and explore datasets.", hold=3.5)
 
     d.caption("Start with a search", hold="read")
     with d.navigates():

@@ -63,7 +63,7 @@ typing is key by key, and there is time to read. Durations are in seconds at
 | `d.spotlight(locator, hold=2, padding=8)` | dim the rest of the page around an element for `hold` seconds, to say "look here". The pointer and caption stay on top |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
 | `d.caption(text, hold=0, position="bottom")` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read. `position=` is `"bottom"`, `"top"` or `"auto"` (see below) |
-| `d.card(kicker, title, text="", hold=3)` | full-screen title card; it fades out at the next action or use of `d.page`, so a card that ends the scene stays up |
+| `d.card(kicker, title, text="", hold=3)` | full-screen title card; it fades out at the next action or use of `d.page`, so a card that ends the scene stays up. Right after the scene's first `d.goto`, it's up from the clip's first frame |
 | `d.pause(seconds)` | hold still |
 | `d.screenshot(name, locator=None)` | save `screenshots/<name>.png` without the overlay |
 | `d.page` | the Playwright `Page`, for everything else. Using it hides a card that is still up |
@@ -139,7 +139,9 @@ d.click(page.get_by_role("button", name="Assign to me"))  # low on the page: the
 caption without being clicked, such as a toast or a dialog's buttons, needs
 `position="top"`.
 
-Use cards to open the video and to mark a change of person or topic.
+Use cards to open the video and to mark a change of person or topic. Their logo
+and colours come from `[tool.ckan-demo.brand]` (see the
+[README](../README.md#configuration)).
 
 Record without captions (`--no-captions`) when you will narrate.
 

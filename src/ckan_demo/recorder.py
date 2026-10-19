@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
@@ -37,9 +38,14 @@ class RecordingError(Exception):
         self.clips = clips
 
 
+def overlay_script(brand: dict[str, str]) -> str:
+    """The overlay, with the title card branding it reads when mounting."""
+    return f"window.__demoBrand = {json.dumps(brand)};\n{OVERLAY}"
+
+
 def _prepare_context(context: BrowserContext, options: Options) -> None:
     """Add the overlay and hide the Flask debug toolbar."""
-    context.add_init_script(OVERLAY)
+    context.add_init_script(overlay_script(options.brand))
     context.add_cookies([{"name": "fldt", "value": "hide", "url": options.base_url}])
 
 

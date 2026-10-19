@@ -261,6 +261,7 @@ def record_command(
         selected = loaded.select(scenes.split(",") if scenes else None)
         effect = resolve_transition(transition, loaded, config)
         soundtrack = resolve_music(music, no_music, config, warn=lambda line: click.echo(line, err=True))
+        brand = config.brand.overlay()
         if jobs > 1 and not loaded.independent_scenes:
             click.echo("warning: scenes may depend on each other, recording one at a time", err=True)
             jobs = 1
@@ -272,7 +273,9 @@ def record_command(
             )
 
     width, height = size or loaded.size
-    options = Options(base_url=site.url, width=width, height=height, captions=captions, speed=speed, output=output_dir)
+    options = Options(
+        base_url=site.url, width=width, height=height, captions=captions, speed=speed, output=output_dir, brand=brand
+    )
     try:
         clips = record(loaded, options, selected, headed=headed, jobs=jobs, on_scene=click.echo)
     except RecordingError as error:

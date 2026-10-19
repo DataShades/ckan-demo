@@ -6,7 +6,7 @@ import pytest
 
 from ckan_demo import Scenario
 from ckan_demo.cli import DEFAULT_PORTAL, resolve_settings
-from ckan_demo.config import Config, ConfigError, load_config
+from ckan_demo.config import Brand, Config, ConfigError, load_config
 
 
 def _project(tmp_path: Path, table: str) -> Path:
@@ -100,3 +100,67 @@ def test_music_is_a_path_and_its_volume_a_number(tmp_path):
 def test_music_volume_must_be_a_number(tmp_path, value):
     with pytest.raises(ConfigError, match="music-volume must be a number"):
         load_config(_project(tmp_path, f"[tool.ckan-demo]\nmusic-volume = {value}\n"))
+
+
+def test_brand_is_a_sub_table(tmp_path):
+    scenario = _project(
+        tmp_path,
+        '[tool.ckan-demo]\nportal = "http://portal.test"\n\n'
+        '[tool.ckan-demo.brand]\nlogo = "demo/logo.svg"\nbackground = ["#002b49", "rgb(0 94 151)"]\n'
+        'text = "white"\naccent = "#ffb81c"\n',
+    )
+
+    config = load_config(scenario)
+
+    assert config.brand == Brand(
+        logo=(tmp_path / "demo" / "logo.svg").resolve(),
+        background=("#002b49", "rgb(0 94 151)"),
+        text="white",
+        accent="#ffb81c",
+    )
+    assert config.keys == {"portal", "brand"}
+
+
+def test_no_brand_keeps_the_built_in_card():
+    assert Brand().overlay() == {}
+
+
+def test_brand_overlay_settings(tmp_path):
+    logo = tmp_path / "logo.svg"
+    logo.write_text("<svg xmlns='http://www.w3.org/2000/svg'/>")
+
+    settings = Brand(logo=logo, background=("#002b49", "#005e97"), text="#fff", accent="gold").overlay()
+
+    assert settings["logo"].startswith("data:image/svg+xml;base64,")
+    assert settings["background"] == "linear-gradient(135deg, #002b49, #005e97)"
+    assert settings["text"] == "#fff"
+    assert settings["muted"] == "color-mix(in srgb, #fff 80%, transparent)"
+    assert settings["accent"] == "gold"
+    assert Brand(background=("#002b49",)).overlay() == {"background": "#002b49"}
+
+
+@pytest.mark.parametrize(("name", "message"), [("missing.png", "is not a file"), ("logo.bmp", "use one of")])
+def test_bad_logo_is_an_error(tmp_path, name, message):
+    (tmp_path / "logo.bmp").write_bytes(b"BM")
+
+    with pytest.raises(ConfigError, match=message):
+        Brand(logo=tmp_path / name).overlay()
+
+
+@pytest.mark.parametrize(
+    ("table", "message"),
+    [
+        ('brand = "navy"\n', "must be a table"),
+        ('[tool.ckan-demo.brand]\ncolour = "navy"\n', "unknown key"),
+        ('[tool.ckan-demo.brand]\nbackground = "#12"\n', "must be a CSS colour"),
+        ("[tool.ckan-demo.brand]\nbackground = []\n", "a colour or a list"),
+        ('[tool.ckan-demo.brand]\ntext = "red; display: none"\n', "must be a CSS colour"),
+        ("[tool.ckan-demo.brand]\naccent = 5\n", "must be a CSS colour"),
+        ("[tool.ckan-demo.brand]\nlogo = 5\n", "logo must be a non-empty string"),
+    ],
+)
+def test_malformed_brand_is_an_error(tmp_path, table, message):
+    if not table.startswith("["):
+        table = "[tool.ckan-demo]\n" + table
+    with pytest.raises(ConfigError, match=message):
+        load_config(_project(tmp_path, table))

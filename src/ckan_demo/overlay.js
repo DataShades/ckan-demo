@@ -76,18 +76,22 @@
         }
         #demo-spotlight.shown { opacity: 1; }
 
+        /* Colours are variables so [tool.ckan-demo.brand] can set them. */
         #demo-card {
+            --background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%);
+            --text: #f8fafc; --muted: #cbd5e1; --accent: #93c5fd;
             position: fixed; z-index: 2147483644; inset: 0;
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             gap: 18px; padding: 0 10%;
-            background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); color: #f8fafc;
+            background: var(--background); color: var(--text);
             font-family: "Noto Sans", system-ui, sans-serif; text-align: center;
             opacity: 0; transition: opacity 0.4s ease; pointer-events: none;
         }
         #demo-card.shown { opacity: 1; }
-        #demo-card .kicker { font-size: 20px; letter-spacing: 0.18em; text-transform: uppercase; color: #93c5fd; }
+        #demo-card .logo { max-width: 480px; max-height: 112px; margin-bottom: 14px; object-fit: contain; }
+        #demo-card .kicker { font-size: 20px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--accent); }
         #demo-card h1 { margin: 0; font-size: 64px; font-weight: 800; color: inherit; }
-        #demo-card p { margin: 0; font-size: 26px; color: #cbd5e1; max-width: 900px; }
+        #demo-card p { margin: 0; font-size: 26px; color: var(--muted); max-width: 900px; }
     `;
 
     const cursorSvg = `
@@ -95,6 +99,9 @@
             <path d="M3 2 L3 19 L8 14.5 L11.5 22 L14.5 20.6 L11 13.3 L17.5 13.3 Z"
                   fill="#111827" stroke="#ffffff" stroke-width="1.6" stroke-linejoin="round"/>
         </svg>`;
+
+    // Title card logo and colours, set by the recorder before this script.
+    const brand = window.__demoBrand || {};
 
     let cursor, caption, keys, card, spotlight;
     let keysHide = null;  // pending fade-out of the key badge
@@ -116,6 +123,9 @@
         keys.id = "demo-keys";
         card = document.createElement("div");
         card.id = "demo-card";
+        for (const name of ["background", "text", "muted", "accent"]) {
+            if (brand[name]) card.style.setProperty("--" + name, brand[name]);
+        }
         spotlight = document.createElement("div");
         spotlight.id = "demo-spotlight";
         document.body.append(cursor, caption, keys, card, spotlight);
@@ -281,15 +291,23 @@
                 requestAnimationFrame(step);
             });
         },
-        card(kicker, title, text) {
+        // `instant` skips the fade-in, for a card that opens a clip.
+        card(kicker, title, text, instant = false) {
             if (!title) {
                 card.classList.remove("shown");
                 return;
             }
             card.innerHTML =
+                (brand.logo ? `<img class="logo" alt="" src="${escape(brand.logo)}">` : "") +
                 (kicker ? `<div class="kicker">${escape(kicker)}</div>` : "") +
                 `<h1>${escape(title)}</h1>` +
                 (text ? `<p>${escape(text)}</p>` : "");
+            if (instant) {
+                card.style.transition = "none";
+                card.classList.add("shown");
+                card.offsetHeight;  // apply before the transition comes back
+                card.style.transition = "";
+            }
             card.classList.add("shown");
         },
     };

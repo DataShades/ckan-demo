@@ -48,6 +48,9 @@ class FakePage:
     def press(self, key):
         self.pressed.append(key)
 
+    def goto(self, url, wait_until=None):
+        self.clock.now += 1.5  # loading
+
 
 BOX = {"x": 100, "y": 1000, "width": 80, "height": 30}
 
@@ -182,10 +185,40 @@ def test_card_stays_up_until_the_next_action(clock):
     d.card("CKAN", "Find open data", hold=3)
     d.pause(1)
 
-    assert page.cards == [["CKAN", "Find open data", ""]]  # no pause hides it
+    assert page.cards == [["CKAN", "Find open data", "", False]]  # no pause hides it
     d.caption("Start with a search")
-    assert page.cards == [["CKAN", "Find open data", ""], None]
+    assert page.cards == [["CKAN", "Find open data", "", False], None]
     assert page.waits == [3, 1, 0.5]  # hold, pause, fade out
+
+
+def test_card_after_the_first_page_load_opens_the_clip(clock):
+    d = _director(clock)
+    page = d._page
+
+    d.goto("/")
+    assert d.lead_in == 1.5
+    d.card("", "Find open data", hold=3)
+
+    assert page.cards == [["", "Find open data", "", True]]  # no fade-in
+    assert page.waits == [Director.CARD_MARGIN, 3]
+    assert d.lead_in == pytest.approx(1.5 + Director.CARD_MARGIN)  # the page is cut
+
+
+@pytest.mark.parametrize("before", ["caption", "page", "second card"])
+def test_card_after_anything_else_fades_in(clock, before):
+    d = _director(clock)
+    d.goto("/")
+    if before == "caption":
+        d.caption("Hi")
+    elif before == "page":
+        d.page  # noqa: B018
+    else:
+        d.card("", "First", hold=0)
+
+    d.card("", "Find open data", hold=0)
+
+    assert d._page.cards[-1] == ["", "Find open data", "", False]
+    assert d.lead_in == pytest.approx(1.5 + (Director.CARD_MARGIN if before == "second card" else 0))
 
 
 def test_using_the_page_hides_the_card_once(clock):
@@ -196,7 +229,7 @@ def test_using_the_page_hides_the_card_once(clock):
     assert d.page is page
     d.page  # noqa: B018
 
-    assert page.cards == [["", "The end", ""], None]
+    assert page.cards == [["", "The end", "", False], None]
 
 
 def test_captions_default_to_the_bottom(clock):

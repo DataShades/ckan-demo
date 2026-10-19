@@ -103,6 +103,20 @@ music = "demo/background.mp3"
 music-volume = -15
 ```
 
+Title cards use a dark blue gradient. To brand them, add a `brand` table:
+
+```toml
+[tool.ckan-demo.brand]
+logo = "demo/logo.svg"                  # above the kicker; SVG, PNG, JPEG, WebP or GIF
+background = ["#002b49", "#005e97"]     # one colour, or a list for a diagonal gradient
+text = "#ffffff"                        # title; the text line uses it at 80% opacity
+accent = "#ffb81c"                      # kicker
+```
+
+Every key is optional; unset ones keep the default look. Colours are CSS
+colours (`#hex`, names, `rgb()`, `oklch()`…). A missing logo stops the
+recording before it starts.
+
 - Paths are relative to that `pyproject.toml`.
 - Command-line flags always win; then environment variables
   (`CKAN_DEMO_API_TOKEN`, and `CKAN_INI`, which CKAN's own CLI uses); then this

@@ -7,8 +7,9 @@ import pytest
 from click.testing import CliRunner
 
 from ckan_demo import Scenario, seeding
-from ckan_demo.cli import SizeType, cli, resolve_music, resolve_transition
-from ckan_demo.config import Config, ConfigError
+from ckan_demo.cli import SizeType, cli, resolve_frame, resolve_music, resolve_transition
+from ckan_demo.config import Brand, Config, ConfigError, Frame
+from ckan_demo.frame import DEFAULT_BACKGROUND, Layout
 from ckan_demo.video import Transition
 
 SCENARIO = textwrap.dedent(
@@ -256,3 +257,45 @@ def test_music_failure_says_why(runner, scenario_file, monkeypatch, tmp_path):
 
     assert result.exit_code == 1
     assert "(Error opening input files: Invalid data found); the silent video is" in result.output
+
+
+def test_frame_precedence_and_background():
+    framed = Config(frame=Frame(padding=0.1))
+    branded = Config(frame=Frame(), brand=Brand(background=("#012b33", "#0bb5cc")))
+
+    assert resolve_frame(None, Config()) is None
+    assert resolve_frame(False, framed) is None
+    assert resolve_frame(True, Config()) == Frame(background=DEFAULT_BACKGROUND)
+    assert resolve_frame(None, framed) == Frame(background=DEFAULT_BACKGROUND, padding=0.1)
+    assert resolve_frame(None, branded).background == ("#012b33", "#0bb5cc")
+    assert resolve_frame(None, Config(frame=Frame(background=("red",)), brand=branded.brand)).background == ("red",)
+
+
+def test_framed_scenes_are_recorded_at_the_page_size(runner, scenario_file, monkeypatch, tmp_path):
+    recorded, joined = [], []
+    monkeypatch.setattr("ckan_demo.cli.record", lambda scenario, options, *a, **kw: recorded.append(options) or [])
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: joined.append(kw) or target)
+    monkeypatch.setattr("ckan_demo.cli.render", lambda layout, path, **kw: joined.append(kw) or path)
+
+    result = runner.invoke(
+        cli, ["record", str(scenario_file), "--no-setup", "--frame", "--portal", "http://ckan.test:5000"]
+    )
+
+    assert result.exit_code == 0, result.output
+    layout = Layout.fit(1920, 1080)
+    assert (recorded[0].width, recorded[0].height) == (layout.content_width, layout.content_height)
+    style, join = joined
+    assert style["address"] == "ckan.test:5000"
+    assert join["frame"][1] == layout
+
+
+def test_no_frame_by_default(runner, scenario_file, monkeypatch):
+    recorded, joined = [], []
+    monkeypatch.setattr("ckan_demo.cli.record", lambda scenario, options, *a, **kw: recorded.append(options) or [])
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: joined.append(kw) or target)
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup"])
+
+    assert result.exit_code == 0, result.output
+    assert (recorded[0].width, recorded[0].height) == (1920, 1080)
+    assert joined[0]["frame"] is None

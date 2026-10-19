@@ -3,18 +3,22 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import re
 import subprocess
+import tempfile
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, TypeVar
+from urllib.parse import urlsplit
 
 import click
 import requests
 
 from ckan_demo import __version__, seeding, video
-from ckan_demo.config import Config, ConfigError, load_config
+from ckan_demo.config import Config, ConfigError, Frame, css_background, load_config
 from ckan_demo.director import Options
+from ckan_demo.frame import DEFAULT_BACKGROUND, Layout, render
 from ckan_demo.portal import ACTION_ERRORS, Portal, PortalError
 from ckan_demo.recorder import RecordingError, record
 from ckan_demo.scenario import Scenario, ScenarioError, load_scenario
@@ -86,6 +90,32 @@ def resolve_music(
         warn(f"warning: {config.source}: music {config.music} is not a file, recording without music")
         return None
     return config.music
+
+
+def resolve_frame(flag: bool | None, config: Config) -> Frame | None:
+    """``--frame``/``--no-frame``, then config; off by default. Without its
+    own background the frame takes the brand's."""
+    if flag is False or (flag is None and config.frame is None):
+        return None
+    frame = config.frame or Frame()
+    if not frame.background:
+        frame = dataclasses.replace(frame, background=config.brand.background or DEFAULT_BACKGROUND)
+    return frame
+
+
+def frame_layout(frame: Frame | None, width: int, height: int) -> Layout | None:
+    try:
+        return Layout.fit(width, height, frame.padding) if frame else None
+    except ValueError as error:
+        raise ConfigError(str(error)) from error
+
+
+def _render_frame(frame: Frame, layout: Layout, portal: str, directory: Path) -> tuple[Path, Layout]:
+    """The frame image for joining; the address bar shows the portal's host
+    unless the config says otherwise."""
+    address = urlsplit(portal).netloc if frame.address is None else frame.address
+    image = render(layout, directory / "frame.png", background=css_background(frame.background) or "", address=address)
+    return image, layout
 
 
 @contextlib.contextmanager
@@ -225,6 +255,11 @@ def list_command(scenario: Path) -> None:
     metavar="DB",
     help=f"Music level in dB. [default: config music-volume, or {video.DEFAULT_MUSIC_VOLUME:g}]",
 )
+@click.option(
+    "--frame/--no-frame",
+    default=None,
+    help="Put each scene in a browser window on a coloured background. [default: on if config has a frame table]",
+)
 @click.option("--gif", is_flag=True, help="Also write a GIF next to the MP4.")
 @click.option(
     "--output",
@@ -248,6 +283,7 @@ def record_command(
     music: Path | None,
     no_music: bool,
     music_volume: float | None,
+    frame: bool | None,
     gif: bool,
     output: Path | None,
 ) -> None:
@@ -262,6 +298,9 @@ def record_command(
         effect = resolve_transition(transition, loaded, config)
         soundtrack = resolve_music(music, no_music, config, warn=lambda line: click.echo(line, err=True))
         brand = config.brand.overlay()
+        window = resolve_frame(frame, config)
+        width, height = size or loaded.size
+        layout = frame_layout(window, width, height)
         if jobs > 1 and not loaded.independent_scenes:
             click.echo("warning: scenes may depend on each other, recording one at a time", err=True)
             jobs = 1
@@ -272,7 +311,9 @@ def record_command(
                 loaded, site, reset=reset, log=click.echo, warn=lambda line: click.echo(line, err=True)
             )
 
-    width, height = size or loaded.size
+    # In a frame the browser records only the page area, so nothing is scaled.
+    if layout:
+        width, height = layout.content_width, layout.content_height
     options = Options(
         base_url=site.url, width=width, height=height, captions=captions, speed=speed, output=output_dir, brand=brand
     )
@@ -285,11 +326,13 @@ def record_command(
         raise click.ClickException(message) from error
 
     target = output_dir / f"{loaded.slug}.mp4"
-    try:
-        video.join(clips, target, transition=effect)
-    except video.FfmpegMissing as error:
-        click.echo(f"{error}. The scenes are in {output_dir}/ as .webm files.")
-        return
+    with tempfile.TemporaryDirectory() as tmp:
+        framing = _render_frame(window, layout, site.url, Path(tmp)) if window and layout else None
+        try:
+            video.join(clips, target, transition=effect, frame=framing)
+        except video.FfmpegMissing as error:
+            click.echo(f"{error}. The scenes are in {output_dir}/ as .webm files.")
+            return
     if soundtrack:
         volume = music_volume if music_volume is not None else config.music_volume
         try:

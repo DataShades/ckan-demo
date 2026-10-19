@@ -83,6 +83,7 @@ uploads; without either (or without permission) it records the portal as it is.
 | `--music FILE` | config | background music for the whole video: looped or cut to fit, faded in and out |
 | `--music-volume DB` | config, else `-12` | music level in dB |
 | `--no-music` | | leave the music out (e.g. for a voice-over), even if the config sets some |
+| `--frame` / `--no-frame` | on if config has a `frame` table | put each scene in a browser window on a coloured background |
 | `--gif` | | also write a GIF (best for short scenes) |
 | `--headed` | | watch the browser while it records |
 | `--jobs N` | `1` | record N scenes at once; only for scenarios with `independent_scenes=True` |
@@ -116,6 +117,22 @@ accent = "#ffb81c"                      # kicker
 Every key is optional; unset ones keep the default look. Colours are CSS
 colours (`#hex`, names, `rgb()`, `oklch()`…). A missing logo stops the
 recording before it starts.
+
+To put every scene in a rounded browser window with a soft shadow on a
+coloured background, add a `frame` table (even an empty one), or pass
+`--frame` for a single run:
+
+```toml
+[tool.ckan-demo.frame]
+background = ["#1e3a8a", "#7c3aed"]  # default: the brand background, else this gradient
+padding = 0.06                       # around the window, as a share of the video height (0–0.2)
+address = "demo.ckan.org"            # in the address bar; default: the portal's host; "" for none
+```
+
+The video keeps its size; the browser records only the page area inside the
+window (1792×914 in a 1920×1080 video at the default padding), so the page
+is never scaled, but CKAN's layout gets a little less room. Screenshots
+taken with `d.screenshot()` are not framed.
 
 - Paths are relative to that `pyproject.toml`.
 - Command-line flags always win; then environment variables

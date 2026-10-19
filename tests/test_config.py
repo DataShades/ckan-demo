@@ -6,7 +6,7 @@ import pytest
 
 from ckan_demo import Scenario
 from ckan_demo.cli import DEFAULT_PORTAL, resolve_settings
-from ckan_demo.config import Brand, Config, ConfigError, load_config
+from ckan_demo.config import Brand, Config, ConfigError, Frame, load_config
 
 
 def _project(tmp_path: Path, table: str) -> Path:
@@ -160,6 +160,44 @@ def test_bad_logo_is_an_error(tmp_path, name, message):
     ],
 )
 def test_malformed_brand_is_an_error(tmp_path, table, message):
+    if not table.startswith("["):
+        table = "[tool.ckan-demo]\n" + table
+    with pytest.raises(ConfigError, match=message):
+        load_config(_project(tmp_path, table))
+
+
+def test_frame_is_off_unless_there_is_a_table(tmp_path):
+    assert load_config(_project(tmp_path, '[tool.ckan-demo]\nportal = "http://x"\n')).frame is None
+
+
+def test_an_empty_frame_table_turns_it_on(tmp_path):
+    config = load_config(_project(tmp_path, "[tool.ckan-demo.frame]\n"))
+
+    assert config.frame == Frame()
+    assert config.keys == {"frame"}
+
+
+def test_frame_settings(tmp_path):
+    scenario = _project(
+        tmp_path,
+        '[tool.ckan-demo.frame]\nbackground = ["#002b49", "oklch(70% 0.1 200)"]\npadding = 0.1\naddress = ""\n',
+    )
+
+    assert load_config(scenario).frame == Frame(background=("#002b49", "oklch(70% 0.1 200)"), padding=0.1, address="")
+
+
+@pytest.mark.parametrize(
+    ("table", "message"),
+    [
+        ("frame = true\n", "must be a table"),
+        ("[tool.ckan-demo.frame]\nshadow = 1\n", "unknown key"),
+        ("[tool.ckan-demo.frame]\npadding = 0.5\n", "padding must be a number from 0 to 0.2"),
+        ('[tool.ckan-demo.frame]\npadding = "6%"\n', "padding must be a number"),
+        ("[tool.ckan-demo.frame]\naddress = 5\n", "address must be a string"),
+        ('[tool.ckan-demo.frame]\nbackground = "#12"\n', "must be a CSS colour"),
+    ],
+)
+def test_malformed_frame_is_an_error(tmp_path, table, message):
     if not table.startswith("["):
         table = "[tool.ckan-demo]\n" + table
     with pytest.raises(ConfigError, match=message):

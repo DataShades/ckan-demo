@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ckan_demo import video
+from ckan_demo.frame import Layout
 from ckan_demo.recorder import Clip
 from ckan_demo.video import Transition
 
@@ -115,6 +116,20 @@ def test_without_durations_scenes_are_cut():
     assert "fade" not in graph
 
 
+def test_frame_goes_over_every_faded_clip():
+    clips = [Clip(Path("a.webm"), 0.0), Clip(Path("b.webm"), 0.0)]
+    frame = (Path("frame.png"), Layout.fit(1920, 1080))
+
+    command = video.join_command(clips, Path("o.mp4"), durations=[5.0, 5.0], transition=Transition(), frame=frame)
+
+    assert command[command.index("frame.png") - 1] == "-i"
+    graph = _graph(command)
+    assert graph.startswith("[2:v]format=rgba,split=2[f0][f1];")
+    assert "fade=t=out:st=4.60:d=0.4,pad=1920:1080:64:102[p0];[p0][f0]overlay=0:0,format=yuv420p[v0]" in graph
+    assert "[p1][f1]overlay=0:0,format=yuv420p[v1]" in graph
+    assert graph.endswith("[v0][v1]concat=n=2:v=1:a=0[out]")
+
+
 def test_gif_command_scales_and_uses_a_palette():
     graph = _graph(video.gif_command(Path("in.mp4"), Path("out.gif"), width=640))
 
@@ -183,6 +198,29 @@ def test_add_music_matches_the_video_length(tmp_path, song_seconds):
     assert sorted(_streams(clip)) == ["audio", "video"]
     assert video.duration(clip) == pytest.approx(4.0, abs=0.1)
     assert sorted(tmp_path.iterdir()) == sorted([clip, song])  # no leftover partial file
+
+
+@pytest.mark.parametrize("kind", ["cut", "fade", "crossfade"])
+def test_framed_join_is_the_video_size_throughout(tmp_path, kind):
+    _ffmpeg_or_skip()
+    layout = Layout.fit(320, 180)
+    frame = tmp_path / "frame.png"
+    run = video.subprocess.run
+    run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red@0.5:s=320x180,format=rgba",
+         "-frames:v", "1", str(frame)], check=True)  # fmt: skip
+    clips = []
+    for name in "ab":
+        clip = tmp_path / f"{name}.webm"
+        size = f"{layout.content_width}x{layout.content_height}"
+        run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", f"testsrc2=s={size}:r=25:d=2", str(clip)],
+            check=True)  # fmt: skip
+        clips.append(Clip(clip, 0.2))
+
+    target = video.join(clips, tmp_path / "demo.mp4", transition=Transition.parse(kind), frame=(frame, layout))
+
+    sizes = run(["ffprobe", "-v", "error", "-show_entries", "frame=width,height", "-of", "csv=p=0", str(target)],
+                check=True, capture_output=True, text=True).stdout.split()  # fmt: skip
+    assert {size.strip(",") for size in sizes} == {"320,180"}
 
 
 def test_add_music_failure_keeps_the_silent_video(tmp_path):

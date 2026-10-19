@@ -12,6 +12,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from ckan_demo.frame import DEFAULT_PADDING, MAX_PADDING
+
 if TYPE_CHECKING:
     from pathlib import Path
 
@@ -24,8 +26,9 @@ TABLE = "ckan-demo"
 _PATH_KEYS = {"ckan-ini", "music", "output"}
 _STRING_KEYS = {"portal", "transition"}
 _NUMBER_KEYS = {"music-volume"}
-_TABLE_KEYS = {"brand"}
+_TABLE_KEYS = {"brand", "frame"}
 _BRAND_KEYS = {"logo", "background", "text", "accent"}
+_FRAME_KEYS = {"background", "padding", "address"}
 
 # Hex, a name, or a colour function such as rgb() or oklch(); enough to catch
 # typos without parsing CSS.
@@ -42,6 +45,13 @@ _LOGO_TYPES = {
 
 class ConfigError(Exception):
     """Malformed ``[tool.ckan-demo]``."""
+
+
+def css_background(colours: tuple[str, ...]) -> str | None:
+    """One colour, or a diagonal gradient through several."""
+    if len(colours) == 1:
+        return colours[0]
+    return f"linear-gradient(135deg, {', '.join(colours)})" if colours else None
 
 
 @dataclass(frozen=True)
@@ -66,16 +76,24 @@ class Brand:
             if not self.logo.is_file():
                 raise ConfigError(f"brand logo {self.logo} is not a file")
             settings["logo"] = f"data:{mime};base64,{base64.b64encode(self.logo.read_bytes()).decode()}"
-        if len(self.background) == 1:
-            settings["background"] = self.background[0]
-        elif self.background:
-            settings["background"] = f"linear-gradient(135deg, {', '.join(self.background)})"
+        background = css_background(self.background)
+        if background:
+            settings["background"] = background
         if self.text:
             settings["text"] = self.text
             settings["muted"] = f"color-mix(in srgb, {self.text} 80%, transparent)"
         if self.accent:
             settings["accent"] = self.accent
         return settings
+
+
+@dataclass(frozen=True)
+class Frame:
+    """The browser window around each scene, from ``[tool.ckan-demo.frame]``."""
+
+    background: tuple[str, ...] = ()  # one colour, or gradient stops; empty: the brand's
+    padding: float = DEFAULT_PADDING  # around the window, as a share of the video height
+    address: str | None = None  # in the address bar; None: the portal's host
 
 
 @dataclass(frozen=True)
@@ -90,6 +108,7 @@ class Config:
     music: Path | None = None
     music_volume: float | None = None
     brand: Brand = field(default_factory=Brand)
+    frame: Frame | None = None  # a table, even an empty one, turns the frame on
     keys: frozenset[str] = field(default_factory=frozenset)
 
 
@@ -146,6 +165,7 @@ def load_config(scenario_path: Path) -> Config:
         music=path("music"),
         music_volume=float(table["music-volume"]) if "music-volume" in table else None,
         brand=_load_brand(pyproject, table.get("brand", {})),
+        frame=_load_frame(pyproject, table["frame"]) if "frame" in table else None,
         keys=frozenset(table),
     )
 
@@ -157,23 +177,47 @@ def _load_brand(pyproject: Path, table: dict[str, Any]) -> Brand:
         raise ConfigError(f"{where}: unknown key(s): {', '.join(unknown)} (known: {', '.join(sorted(_BRAND_KEYS))})")
 
     def colour(key: str, value: Any) -> str:
-        if not isinstance(value, str) or not _COLOUR.fullmatch(value.strip()):
-            raise ConfigError(f'{where} {key} must be a CSS colour like "#1e3a8a", not {value!r}')
-        return value.strip()
+        return _colour(where, key, value)
 
     logo = table.get("logo")
     if logo is not None and (not isinstance(logo, str) or not logo):
         raise ConfigError(f"{where} logo must be a non-empty string")
 
+    return Brand(
+        logo=(pyproject.parent / logo).resolve() if logo else None,
+        background=_colours(where, table),
+        text=colour("text", table["text"]) if "text" in table else None,
+        accent=colour("accent", table["accent"]) if "accent" in table else None,
+    )
+
+
+def _colour(where: str, key: str, value: Any) -> str:
+    if not isinstance(value, str) or not _COLOUR.fullmatch(value.strip()):
+        raise ConfigError(f'{where} {key} must be a CSS colour like "#1e3a8a", not {value!r}')
+    return value.strip()
+
+
+def _colours(where: str, table: dict[str, Any]) -> tuple[str, ...]:
+    """``background``: one colour or a list of them."""
     background = table.get("background", [])
     if isinstance(background, str):
         background = [background]
     if not isinstance(background, list) or ("background" in table and not background):
         raise ConfigError(f"{where} background must be a colour or a list of colours")
+    return tuple(_colour(where, "background", value) for value in background)
 
-    return Brand(
-        logo=(pyproject.parent / logo).resolve() if logo else None,
-        background=tuple(colour("background", value) for value in background),
-        text=colour("text", table["text"]) if "text" in table else None,
-        accent=colour("accent", table["accent"]) if "accent" in table else None,
-    )
+
+def _load_frame(pyproject: Path, table: dict[str, Any]) -> Frame:
+    where = f"{pyproject}: [tool.{TABLE}.frame]"
+    unknown = sorted(set(table) - _FRAME_KEYS)
+    if unknown:
+        raise ConfigError(f"{where}: unknown key(s): {', '.join(unknown)} (known: {', '.join(sorted(_FRAME_KEYS))})")
+
+    padding = table.get("padding", DEFAULT_PADDING)
+    if isinstance(padding, bool) or not isinstance(padding, (int, float)) or not 0 <= padding <= MAX_PADDING:
+        raise ConfigError(f"{where} padding must be a number from 0 to {MAX_PADDING:g} (a share of the video height)")
+    address = table.get("address")
+    if address is not None and not isinstance(address, str):
+        raise ConfigError(f'{where} address must be a string ("" for an empty address bar)')
+
+    return Frame(background=_colours(where, table), padding=float(padding), address=address)

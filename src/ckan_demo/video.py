@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from ckan_demo.frame import Layout
     from ckan_demo.recorder import Clip
 
 
@@ -83,11 +84,14 @@ def join_command(
     *,
     durations: Sequence[float] | None = None,
     transition: Transition = DEFAULT_TRANSITION,
+    frame: tuple[Path, Layout] | None = None,
     fps: int = 30,
 ) -> list[str]:
     """ffmpeg command that trims lead-ins and joins the clips.
 
-    Fades need ``durations``; without them scenes are cut.
+    Fades need ``durations``; without them scenes are cut. A ``frame`` (its
+    image and layout) goes over every faded clip, so it stays put while the
+    page fades or blends.
     """
     inputs: list[str] = []
     filters: list[str] = []
@@ -103,7 +107,21 @@ def join_command(
             chain += f",fade=t=in:st=0:d={seconds:g}"
             if lengths[index] > 2 * seconds:
                 chain += f",fade=t=out:st={lengths[index] - seconds:.2f}:d={seconds:g}"
+        if frame:
+            _, layout = frame
+            # Clips are recorded at the page size, so no scale (which, before
+            # pad and overlay, makes ffmpeg 8.1 emit one frame a row too tall).
+            chain += (
+                f",pad={layout.width}:{layout.height}:{layout.content_x}:{layout.content_y}[p{index}];"
+                f"[p{index}][f{index}]overlay=0:0,format=yuv420p"
+            )
         filters.append(f"{chain}[v{index}]")
+
+    if frame:
+        # One still image; overlay repeats it for the whole clip.
+        inputs += ["-i", str(frame[0])]
+        copies = "".join(f"[f{index}]" for index in range(len(clips)))
+        filters.insert(0, f"[{len(clips)}:v]format=rgba,split={len(clips)}{copies}")
 
     if kind == "crossfade" and len(clips) > 1:
         # Each blend starts `overlap` seconds before the end so far; short
@@ -170,9 +188,15 @@ def gif_command(video: Path, output: Path, *, width: int = 960, fps: int = 12) -
     ]  # fmt: skip
 
 
-def join(clips: Sequence[Clip], output: Path, *, transition: Transition = DEFAULT_TRANSITION) -> Path:
+def join(
+    clips: Sequence[Clip],
+    output: Path,
+    *,
+    transition: Transition = DEFAULT_TRANSITION,
+    frame: tuple[Path, Layout] | None = None,
+) -> Path:
     durations = [duration(clip.path) for clip in clips] if transition.kind != "cut" else None
-    command = join_command(clips, output, durations=durations, transition=transition)
+    command = join_command(clips, output, durations=durations, transition=transition, frame=frame)
     command[0] = _ffmpeg()
     subprocess.run(command, check=True)
     return output

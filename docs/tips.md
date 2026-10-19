@@ -64,6 +64,17 @@ leaves wide side margins, so text looks smaller. For demos of small UI
 (forms, dialogs), a smaller 16:9 size such as `--size 1280x720` makes it
 easier to read.
 
+## Browser frame
+
+`--frame` (or a `[tool.ckan-demo.frame]` table; see the README) wraps every
+scene in a browser window over a coloured background. The window is drawn
+once by Chromium and laid over each clip when the scenes are joined, after
+the fades, so the window and background stay still while the page fades or
+blends; `crossfade` reads especially well with it. It costs no extra encode,
+but the page gets less room than the whole video: at small sizes such as
+`--size 1280x720`, CKAN may switch to a narrower layout; a smaller `padding`
+helps.
+
 ## Background music
 
 `--music FILE` (or `music = "..."` in `[tool.ckan-demo]`) lays one track

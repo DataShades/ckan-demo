@@ -63,7 +63,7 @@ uploads; without either (or without permission) it records the portal as it is.
 
 | Command | |
 | --- | --- |
-| `ckan-demo record SCENARIO` | seed (when the run has what the scenario needs), record every scene, join them |
+| `ckan-demo record SCENARIO` | seed (when the run has what the scenario needs), record every scene, join them into an MP4 with a chapter per scene, and print YouTube timestamps |
 | `ckan-demo list SCENARIO` | show the scenario's users and scenes |
 
 `record` options:
@@ -134,7 +134,7 @@ recording before it starts.
 - [Seeding](docs/seeding.md): demo users, seeding through the API or
   locally with your test factories, where seeding code lives, `--reset`
 - [Tips and troubleshooting](docs/tips.md): pacing, flaky steps, dev-only
-  chrome, video quality
+  chrome, video quality, subtitles, chapters, music
 
 ## Who uses it
 

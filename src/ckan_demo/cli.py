@@ -16,7 +16,7 @@ from ckan_demo import __version__, seeding, video
 from ckan_demo.config import Config, ConfigError, load_config
 from ckan_demo.director import Options
 from ckan_demo.portal import ACTION_ERRORS, Portal, PortalError
-from ckan_demo.recorder import RecordingError, record
+from ckan_demo.recorder import Clip, RecordingError, record
 from ckan_demo.scenario import Scenario, ScenarioError, load_scenario
 
 TOKEN_ENV = "CKAN_DEMO_API_TOKEN"
@@ -304,13 +304,40 @@ def record_command(
             raise click.ClickException(
                 f"cannot add music from {soundtrack}{reason}; the silent video is {target}"
             ) from error
+    durations = [video.duration(clip.path) for clip in clips]
+    chapters = _add_chapters(target, [scene.chapter for scene in selected], clips, durations, effect)
     click.echo(f"Video: {target}")
-    vtt = video.write_subtitles(clips, target.with_suffix(".vtt"), transition=effect)
+    vtt = video.write_subtitles(clips, target.with_suffix(".vtt"), transition=effect, durations=durations)
     if vtt:
         click.echo(f"Subtitles: {vtt}")
+    if chapters:
+        click.echo(f"Chapters:\n{video.timestamps(chapters)}")
+        for problem in video.youtube_problems(chapters):
+            click.echo(f"note: {problem}", err=True)
 
     if gif:
         click.echo(f"GIF:   {video.to_gif(target, target.with_suffix('.gif'))}")
+
+
+def _add_chapters(
+    target: Path,
+    titles: list[str],
+    clips: list[Clip],
+    durations: list[float],
+    transition: video.Transition,
+) -> list[video.Chapter]:
+    """Embed a chapter per scene in ``target``; none for a single scene.
+    Failing to embed them is only a warning: the timestamps still work."""
+    if len(clips) <= 1:
+        return []
+    chapters = video.chapters(titles, clips, durations, transition)
+    try:
+        video.add_chapters(target, chapters)
+    except subprocess.CalledProcessError as error:
+        lines = (error.stderr or "").strip().splitlines()
+        reason = f" ({lines[-1]})" if lines else ""
+        click.echo(f"warning: cannot embed chapters in {target}{reason}", err=True)
+    return chapters
 
 
 if __name__ == "__main__":  # pragma: no cover

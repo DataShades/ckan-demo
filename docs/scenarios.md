@@ -39,6 +39,10 @@ def browse(d: Director) -> None: ...
 - **Scenes** are recorded in the order they are declared, each in a fresh
   browser that is already logged in as the scene's user, then joined.
   Prefix names with numbers to keep the order obvious.
+- **Each scene is a chapter** in the video. The title comes from the name
+  without its number (`02-staff-triage` is "Staff triage"); pass
+  `title="Staff triage and reply"` to `scenario.scene` for a different one.
+  See [Chapters](tips.md#chapters).
 - **Scenes build on each other** when the story does (a ticket created in one
   scene is answered in the next), so `--scenes` should pick a prefix of the
   story, or scenes that stand alone.

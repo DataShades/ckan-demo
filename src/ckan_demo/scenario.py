@@ -57,6 +57,16 @@ class Scene:
     play: Callable[[Director], None]
     user: str | None = None
     description: str = ""
+    title: str = ""
+
+    @property
+    def chapter(self) -> str:
+        """The chapter title: ``title``, or the name without its number
+        prefix, e.g. "02-staff-triage" → "Staff triage"."""
+        if self.title:
+            return self.title
+        words = re.sub(r"[-_\s]+", " ", re.sub(r"^\d+[-_.\s]*", "", self.name)).strip()
+        return words[:1].upper() + words[1:] if words else self.name
 
 
 SetupHook = Callable[["Setup"], None]
@@ -77,9 +87,10 @@ class Scenario:
     setup_optional: bool = False
 
     def scene(
-        self, name: str, *, user: str | None = None
+        self, name: str, *, user: str | None = None, title: str = ""
     ) -> Callable[[Callable[[Director], None]], Callable[[Director], None]]:
-        """Add the decorated function as the next scene."""
+        """Add the decorated function as the next scene. ``title`` names its
+        chapter in the video; by default it comes from ``name``."""
 
         def register(play: Callable[[Director], None]) -> Callable[[Director], None]:
             if any(scene.name == name for scene in self.scenes):
@@ -88,7 +99,7 @@ class Scenario:
                 known = ", ".join(sorted(self.users)) or "none"
                 raise ScenarioError(f"scene {name!r} uses unknown user {user!r} (known: {known})")
             description = (play.__doc__ or "").strip().splitlines()[0] if play.__doc__ else ""
-            self.scenes.append(Scene(name, play, user, description))
+            self.scenes.append(Scene(name, play, user, description, title))
             return play
 
         return register

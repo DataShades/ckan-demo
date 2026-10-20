@@ -1,5 +1,5 @@
-"""Joins clips into one video with ffmpeg, adds background music, and writes
-the captions as subtitles."""
+"""Joins clips into one video with ffmpeg, adds background music and
+chapters, and writes the captions as subtitles."""
 
 from __future__ import annotations
 
@@ -269,15 +269,119 @@ def subtitles(clips: Sequence[Clip], durations: Sequence[float], transition: Tra
     return "\n\n".join(blocks) + "\n"
 
 
-def write_subtitles(clips: Sequence[Clip], output: Path, *, transition: Transition = DEFAULT_TRANSITION) -> Path | None:
+def write_subtitles(
+    clips: Sequence[Clip],
+    output: Path,
+    *,
+    transition: Transition = DEFAULT_TRANSITION,
+    durations: Sequence[float] | None = None,
+) -> Path | None:
     """Write ``output`` (.vtt) if any clip has captions; otherwise remove an
-    old one, so it never describes a different recording."""
+    old one, so it never describes a different recording. ``durations`` are
+    the clips' lengths, measured if not given."""
     if not any(clip.cues for clip in clips):
         output.unlink(missing_ok=True)
         return None
-    durations = [duration(clip.path) for clip in clips]
+    if durations is None:
+        durations = [duration(clip.path) for clip in clips]
     output.write_text(subtitles(clips, durations, transition), encoding="utf-8")
     return output
+
+
+# ── Chapters ─────────────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class Chapter:
+    title: str
+    start: float  # seconds in the joined video
+    end: float
+
+
+def chapters(
+    titles: Sequence[str],
+    clips: Sequence[Clip],
+    durations: Sequence[float],
+    transition: Transition = DEFAULT_TRANSITION,
+) -> list[Chapter]:
+    """One chapter per clip, from where it lands in the joined video to where
+    the next one does. A crossfade's chapter starts as the blend begins."""
+    lengths = [durations[i] - clip.lead_in for i, clip in enumerate(clips)]
+    starts = clip_starts(lengths, transition)
+    ends = [*starts[1:], starts[-1] + lengths[-1]] if starts else []
+    return [Chapter(title, start, end) for title, start, end in zip(titles, starts, ends, strict=True)]
+
+
+def youtube_timestamp(seconds: float) -> str:
+    """``0:42``, ``12:05``, ``1:02:03``: whole seconds, rounded down."""
+    hours, rest = divmod(int(seconds), 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02}:{secs:02}" if hours else f"{minutes}:{secs:02}"
+
+
+def timestamps(chapters: Sequence[Chapter]) -> str:
+    """Chapters as a YouTube description lists them, one per line."""
+    return "\n".join(f"{youtube_timestamp(chapter.start)} {chapter.title}" for chapter in chapters)
+
+
+YOUTUBE_MIN_CHAPTERS = 3
+YOUTUBE_MIN_CHAPTER = 10.0  # seconds
+
+
+def youtube_problems(chapters: Sequence[Chapter]) -> list[str]:
+    """Why YouTube would ignore these timestamps, if it would."""
+    problems = []
+    if len(chapters) < YOUTUBE_MIN_CHAPTERS:
+        problems.append(f"YouTube needs at least {YOUTUBE_MIN_CHAPTERS} chapters")
+    short = [chapter.title for chapter in chapters if chapter.end - chapter.start < YOUTUBE_MIN_CHAPTER]
+    if short:
+        problems.append(f"YouTube needs chapters of {YOUTUBE_MIN_CHAPTER:g} s or more ({', '.join(short)})")
+    return problems
+
+
+def _ffmetadata_escape(text: str) -> str:
+    return re.sub(r"([=;#\\\n])", r"\\\1", text)
+
+
+def ffmetadata(chapters: Sequence[Chapter]) -> str:
+    """Chapters in ffmpeg's metadata format, in milliseconds."""
+    lines = [";FFMETADATA1"]
+    for chapter in chapters:
+        lines += [
+            "[CHAPTER]",
+            "TIMEBASE=1/1000",
+            f"START={round(chapter.start * 1000)}",
+            f"END={round(chapter.end * 1000)}",
+            f"title={_ffmetadata_escape(chapter.title)}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def chapters_command(video: Path, metadata: Path, output: Path) -> list[str]:
+    """ffmpeg command that copies ``video`` with the chapters in ``metadata``."""
+    return [
+        "ffmpeg", "-y", "-loglevel", "error", "-i", str(video), "-f", "ffmetadata", "-i", str(metadata),
+        "-map", "0", "-map_chapters", "1", "-c", "copy", "-movflags", "+faststart", str(output),
+    ]  # fmt: skip
+
+
+def add_chapters(video: Path, chapters: Sequence[Chapter]) -> Path:
+    """Embed ``chapters`` in ``video`` in place. The streams are copied, not
+    re-encoded. On failure the video is left as it was."""
+    metadata = video.with_name(f"{video.stem}.chapters.txt")
+    partial = video.with_name(f"{video.stem}.chapters{video.suffix}")
+    metadata.write_text(ffmetadata(chapters), encoding="utf-8")
+    command = chapters_command(video, metadata, partial)
+    command[0] = _ffmpeg()
+    try:
+        subprocess.run(command, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError:
+        partial.unlink(missing_ok=True)
+        raise
+    finally:
+        metadata.unlink(missing_ok=True)
+    partial.replace(video)
+    return video
 
 
 def join(clips: Sequence[Clip], output: Path, *, transition: Transition = DEFAULT_TRANSITION) -> Path:

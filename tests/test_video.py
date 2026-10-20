@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,41 @@ def test_write_subtitles_only_with_captions(tmp_path, monkeypatch):
     assert not target.exists()  # an old file would describe another recording
 
 
+def test_chapters_start_where_each_clip_lands():
+    clips = [Clip(Path("a.webm"), 1.0), Clip(Path("b.webm"), 2.0), Clip(Path("c.webm"), 0.0)]
+    durations = [11.0, 22.0, 5.0]  # 10, 20 and 5 s once trimmed
+
+    cut = video.chapters(["A", "B", "C"], clips, durations, Transition("cut", 0))
+    assert [(c.title, c.start, c.end) for c in cut] == [("A", 0, 10), ("B", 10, 30), ("C", 30, 35)]
+
+    # A crossfade's chapter starts as the blend does, 0.6 s before the cut would.
+    blended = video.chapters(["A", "B", "C"], clips, durations, Transition("crossfade", 0.6))
+    assert [round(c.start, 2) for c in blended] == [0, 9.4, 28.8]
+    assert round(blended[-1].end, 2) == 33.8
+
+
+def test_timestamps_read_like_a_youtube_description():
+    chapters = [
+        video.Chapter("Open a ticket", 0, 42.9),
+        video.Chapter("Staff triage", 42.9, 3725),
+        video.Chapter("Close", 3725, 3800),
+    ]
+
+    assert video.timestamps(chapters) == "0:00 Open a ticket\n0:42 Staff triage\n1:02:05 Close"
+
+
+def test_youtube_problems_name_short_chapters_and_too_few():
+    assert video.youtube_problems([video.Chapter(t, i * 10, i * 10 + 10) for i, t in enumerate("ABC")]) == []
+    problems = video.youtube_problems([video.Chapter("Long", 0, 30), video.Chapter("Quick", 30, 34)])
+    assert problems == ["YouTube needs at least 3 chapters", "YouTube needs chapters of 10 s or more (Quick)"]
+
+
+def test_ffmetadata_escapes_titles():
+    text = video.ffmetadata([video.Chapter("Q&A; a=b #1", 0, 1.2345)])
+
+    assert text == ";FFMETADATA1\n[CHAPTER]\nTIMEBASE=1/1000\nSTART=0\nEND=1234\ntitle=Q&A\\; a\\=b \\#1\n"
+
+
 def test_gif_command_scales_and_uses_a_palette():
     graph = _graph(video.gif_command(Path("in.mp4"), Path("out.gif"), width=640))
 
@@ -303,3 +339,23 @@ def test_add_music_failure_keeps_the_silent_video(tmp_path):
 
     assert clip.read_bytes() == before
     assert not (tmp_path / "demo.music.mp4").exists()
+
+
+def test_add_chapters_embeds_them_without_re_encoding(tmp_path):
+    _ffmpeg_or_skip()
+    clip = tmp_path / "demo.mp4"
+    video.subprocess.run(["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "color=s=64x64:d=4",
+                          "-pix_fmt", "yuv420p", str(clip)], check=True)  # fmt: skip
+
+    video.add_chapters(clip, [video.Chapter("Open; a ticket", 0, 1.5), video.Chapter("Staff triage", 1.5, 4)])
+
+    result = video.subprocess.run(
+        ["ffprobe", "-v", "error", "-show_chapters", "-of", "json", str(clip)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    found = [(c["tags"]["title"], float(c["start_time"])) for c in json.loads(result.stdout)["chapters"]]
+    assert found == [("Open; a ticket", 0.0), ("Staff triage", 1.5)]
+    assert video.duration(clip) == pytest.approx(4.0, abs=0.1)
+    assert sorted(tmp_path.iterdir()) == [clip]  # no leftover metadata or partial file

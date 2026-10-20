@@ -275,3 +275,31 @@ def test_subtitles_are_written_next_to_the_video(runner, scenario_file, monkeypa
     vtt = tmp_path / "out" / "issues-demo.vtt"
     assert f"Subtitles: {vtt}" in result.output
     assert "00:00:01.000 --> 00:00:03.000\nAssign the ticket" in vtt.read_text()
+
+
+def test_chapters_are_embedded_and_printed(runner, scenario_file, monkeypatch, tmp_path):
+    clips = [Clip(tmp_path / "triage.webm", 1.0), Clip(tmp_path / "browse.webm", 0.0)]
+    monkeypatch.setattr("ckan_demo.cli.record", lambda *a, **kw: clips)
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: target)
+    monkeypatch.setattr("ckan_demo.cli.video.duration", lambda path: 43.0 if path.stem == "triage" else 20.0)
+    embedded = []
+    monkeypatch.setattr("ckan_demo.cli.video.add_chapters", lambda target, chapters: embedded.append(chapters))
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup", "--transition", "cut"])
+
+    assert result.exit_code == 0, result.output
+    assert [chapter.title for chapter in embedded[0]] == ["Triage", "Browse"]
+    assert "Chapters:\n0:00 Triage\n0:42 Browse\n" in result.output
+    assert "note: YouTube needs at least 3 chapters" in result.output
+
+
+def test_a_single_scene_gets_no_chapters(runner, scenario_file, monkeypatch, tmp_path):
+    monkeypatch.setattr("ckan_demo.cli.record", lambda *a, **kw: [Clip(tmp_path / "triage.webm", 0.0)])
+    monkeypatch.setattr("ckan_demo.cli.video.join", lambda clips, target, **kw: target)
+    monkeypatch.setattr("ckan_demo.cli.video.duration", lambda path: 10.0)
+    monkeypatch.setattr("ckan_demo.cli.video.add_chapters", lambda *a: pytest.fail("added chapters"))
+
+    result = runner.invoke(cli, ["record", str(scenario_file), "--no-setup"])
+
+    assert result.exit_code == 0, result.output
+    assert "Chapters" not in result.output

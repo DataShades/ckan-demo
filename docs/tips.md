@@ -81,6 +81,28 @@ page load flashes a small magenta square in the corner, inside the part that
 is cut, and ckan-demo finds it in the video to measure the difference for
 each clip. Without ffmpeg it can't, and it falls back to the scene's timing.
 
+## Chapters
+
+With more than one scene, the MP4 gets a chapter per scene, which players
+such as VLC and QuickTime list, and `record` prints them as YouTube
+timestamps, ready to paste into the video's description:
+
+```
+Chapters:
+0:00 Open ticket
+0:42 Staff triage
+1:15 Conversation
+```
+
+Each chapter starts where its scene lands in the joined video (as the blend
+begins, with crossfades). Chapter titles come from the scene names, or from
+`title=` on `scenario.scene`; see [Writing scenarios](scenarios.md).
+
+YouTube only shows chapters for at least 3 timestamps, each 10 s or longer;
+`record` prints a note when the scenes don't meet that. Embedding the chapters
+copies the streams without re-encoding; if it fails, `record` warns and the
+timestamps are still printed.
+
 ## Background music
 
 `--music FILE` (or `music = "..."` in `[tool.ckan-demo]`) lays one track

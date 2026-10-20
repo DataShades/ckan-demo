@@ -32,6 +32,23 @@ def test_scenes_keep_declaration_order_and_first_doc_line():
     assert scenario.scenes[1].description == ""
 
 
+@pytest.mark.parametrize(
+    ("name", "title", "chapter"),
+    [
+        ("02-staff-triage", "", "Staff triage"),
+        ("01_open ticket", "", "Open ticket"),
+        ("search", "", "Search"),
+        ("007", "", "007"),  # nothing left without the number
+        ("01-open-ticket", "Open a ticket", "Open a ticket"),
+    ],
+)
+def test_chapter_titles_come_from_the_title_or_the_name(name, title, chapter):
+    scenario = _scenario()
+    scenario.scene(name, title=title)(lambda d: None)
+
+    assert scenario.scenes[0].chapter == chapter
+
+
 def test_duplicate_scene_names_are_rejected():
     scenario = _scenario()
     scenario.scene("one")(lambda d: None)

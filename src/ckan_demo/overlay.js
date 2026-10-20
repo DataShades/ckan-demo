@@ -1,7 +1,10 @@
 /**
  * Injected into every page: a pointer and click ripples (Playwright's video
- * has none), the caption bar, key badges, title cards, the spotlight, and CSS
- * hiding CKAN's dev chrome.
+ * has none), the caption bar, key badges, title cards, the spotlight, zoom,
+ * and CSS hiding CKAN's dev chrome.
+ *
+ * The overlay's elements sit in <html>, beside <body> rather than in it, so
+ * zooming the page (a transform on <body>) leaves them at their size.
  */
 (() => {
     if (window.__demo) return;
@@ -109,6 +112,7 @@
     let pointer = null;  // last pointer position
     let captionMode = "bottom";  // "top", "bottom" or "auto"
     let captionMove = null;  // pending move to the other edge
+    let zoomed = null;  // the zoom in place: { map(x, y), undo }, see zoom()
 
     function mount() {
         const style = document.createElement("style");
@@ -129,7 +133,7 @@
         }
         spotlight = document.createElement("div");
         spotlight.id = "demo-spotlight";
-        document.body.append(cursor, caption, keys, card, spotlight);
+        document.documentElement.append(cursor, caption, keys, card, spotlight);
 
         // Restore the pointer position from the previous page.
         const last = JSON.parse(sessionStorage.getItem("demo-cursor") || "null");
@@ -138,9 +142,16 @@
 
     function move(x, y) {
         pointer = { x, y, width: 22, height: 22 };
-        cursor.style.left = x + "px";
-        cursor.style.top = y + "px";
+        drawCursor();
         sessionStorage.setItem("demo-cursor", JSON.stringify({ x, y }));
+    }
+
+    // Over the pointer's spot on the page, zoomed or not.
+    function drawCursor() {
+        if (!pointer) return;
+        const [left, top] = zoomed ? zoomed.map(pointer.x, pointer.y) : [pointer.x, pointer.y];
+        cursor.style.left = left + "px";
+        cursor.style.top = top + "px";
     }
 
     document.addEventListener("mousemove", (e) => cursor && move(e.clientX, e.clientY), true);
@@ -151,7 +162,7 @@
         ripple.className = "demo-ripple";
         ripple.style.left = e.clientX + "px";
         ripple.style.top = e.clientY + "px";
-        document.body.appendChild(ripple);
+        document.documentElement.appendChild(ripple);
         setTimeout(() => ripple.remove(), 600);
     }, true);
     document.addEventListener("mouseup", () => cursor && cursor.classList.remove("down"), true);
@@ -200,6 +211,34 @@
             caption.classList.add("shown");
             captionMove = null;
         }, 300);
+    }
+
+    // ── Zoom ─────────────────────────────────────────────────────────────
+
+    const ZOOM_EASING = "cubic-bezier(0.65, 0, 0.35, 1)";  // ease in and out
+
+    // The transform that shows `box` (viewport pixels, `padding` around it)
+    // as large as fits, up to `maxScale`, or at `scale`. The view stays
+    // inside what's on screen now, so no blank edge comes into it.
+    function zoomTo(box, { scale = null, padding = 24, maxScale = 3 } = {}) {
+        const width = window.innerWidth, height = window.innerHeight;
+        const fit = Math.min(width / (box.width + 2 * padding), height / (box.height + 2 * padding));
+        const s = Math.max(1, scale || Math.min(maxScale, fit));
+        // Top left of the view, in unzoomed viewport pixels.
+        const clamp = (value, size) => Math.max(0, Math.min(size - size / s, value));
+        const left = clamp(box.x + box.width / 2 - width / (2 * s), width);
+        const top = clamp(box.y + box.height / 2 - height / (2 * s), height);
+        return { s, left, top, map: (x, y) => [s * (x - left), s * (y - top)] };
+    }
+
+    // Run a transition of `ms` on `el`'s `properties`, then drop it.
+    function animate(el, properties, ms, apply) {
+        el.style.transition = properties.map((name) => `${name} ${ms}ms ${ZOOM_EASING}`).join(", ");
+        apply();
+        return new Promise((resolve) => setTimeout(() => {
+            el.style.transition = "";
+            resolve();
+        }, ms));
     }
 
     // ── Scrolling ────────────────────────────────────────────────────────
@@ -263,6 +302,54 @@
             });
             spotlight.classList.add("shown");
         },
+        // Zoom the page into `box` (viewport pixels) over `ms`; no box zooms
+        // back out. The pointer moves with the page, so it stays over what it
+        // was on; the caption, badges and cards keep their size. Resolves
+        // when the zoom is done.
+        zoom(box, ms = 800, options = {}) {
+            const body = document.body;
+            const root = document.documentElement;
+            if (!box) {
+                if (!zoomed) return Promise.resolve();
+                const { undo } = zoomed;
+                zoomed = null;
+                const out = animate(body, ["transform"], ms, () => {
+                    body.style.transform = "translate(0px, 0px) scale(1)";
+                });
+                const back = animate(cursor, ["left", "top"], ms, drawCursor);
+                return Promise.all([out, back]).then(undo);
+            }
+            if (zoomed) zoomed.undo();
+            const view = zoomTo(box, options);
+            // `transform-origin: 0 0` is the body's corner, which isn't
+            // always the viewport's: account for where it is.
+            const corner = body.getBoundingClientRect();
+            const tx = (view.s - 1) * corner.left - view.s * view.left;
+            const ty = (view.s - 1) * corner.top - view.s * view.top;
+            const saved = {
+                transform: body.style.transform,
+                origin: body.style.transformOrigin,
+                overflowX: root.style.overflowX,
+            };
+            // The bigger body would otherwise add a horizontal scrollbar.
+            root.style.overflowX = "hidden";
+            body.style.transformOrigin = "0 0";
+            body.style.transform = "translate(0px, 0px) scale(1)";
+            body.offsetHeight;  // start the transition from there
+            zoomed = {
+                map: view.map,
+                undo() {
+                    body.style.transform = saved.transform;
+                    body.style.transformOrigin = saved.origin;
+                    root.style.overflowX = saved.overflowX;
+                },
+            };
+            const zoomIn = animate(body, ["transform"], ms, () => {
+                body.style.transform = `translate(${tx}px, ${ty}px) scale(${view.s})`;
+            });
+            const follow = animate(cursor, ["left", "top"], ms, drawCursor);
+            return Promise.all([zoomIn, follow]).then(() => view.s);
+        },
         // Scroll the page so `el` is centred, smoothly, unless it's already in
         // view. Resolves with the pixels scrolled once the page is still.
         // `scroll-behavior: smooth` (Bootstrap sets it) is bypassed, so
@@ -322,7 +409,7 @@
                 marker.style.cssText =
                     "position:fixed;z-index:2147483647;left:0;top:0;width:32px;height:32px;" +
                     "background:#f0f;pointer-events:none";
-                document.body.appendChild(marker);
+                document.documentElement.appendChild(marker);
             }
             return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         },

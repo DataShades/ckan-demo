@@ -322,6 +322,43 @@ class Director:
         self._page.evaluate("() => window.__demo.spotlight(null)")
         self.pause(0.4)  # the fade-out
 
+    def zoom(
+        self,
+        area: Locator | tuple[float, float, float, float],
+        hold: float = 2.0,
+        *,
+        zoom_in: float = 0.8,
+        zoom_out: float = 0.6,
+        scale: float | None = None,
+        padding: int = 24,
+    ) -> None:
+        """Zoom into ``area`` over ``zoom_in`` seconds, hold for ``hold``,
+        then zoom back out over ``zoom_out``.
+
+        ``area`` is an element, or ``(x, y, width, height)`` in viewport
+        pixels. It fills as much of the frame as fits with ``padding`` around
+        it, up to 3 times, or ``scale`` sets the factor. The page is re-rendered
+        larger, so text stays sharp. The pointer moves with the page; the
+        caption keeps its size, so one shown before reads alongside.
+        """
+        if scale is not None and scale < 1:
+            raise ValueError(f"scale must be 1 or more, not {scale!r}")
+        if min(hold, zoom_in, zoom_out) < 0:
+            raise ValueError("hold, zoom_in and zoom_out are seconds, 0 or more")
+        self._hide_card()
+        if isinstance(area, tuple):
+            x, y, width, height = area
+            box = {"x": x, "y": y, "width": width, "height": height}
+        else:
+            box = self._reveal(area)
+        options = {"scale": scale, "padding": padding}
+        speed = self.options.speed
+        self._page.evaluate(
+            "([box, ms, options]) => window.__demo.zoom(box, ms, options)", [box, zoom_in * 1000 / speed, options]
+        )
+        self.pause(hold)
+        self._page.evaluate("ms => window.__demo.zoom(null, ms)", zoom_out * 1000 / speed)
+
     def click(self, locator: Locator) -> None:
         self.point(locator)
         locator.click()

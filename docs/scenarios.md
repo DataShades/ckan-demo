@@ -65,6 +65,7 @@ typing is key by key, and there is time to read. Durations are in seconds at
 | `d.press(key, badge=None)` | press a key (`"Enter"`, `"Escape"`, `"Control+Enter"`). Shortcuts show a key badge (<kbd>Ctrl</kbd> + <kbd>Enter</kbd>) next to the caption just before the press; `badge=True` or `False` turns it on or off for any key |
 | `d.point(locator)` | glide to an element without clicking, to draw attention |
 | `d.spotlight(locator, hold=2, padding=8)` | dim the rest of the page around an element for `hold` seconds, to say "look here". The pointer and caption stay on top |
+| `d.zoom(area, hold=2, zoom_in=0.8, zoom_out=0.6, scale=None, padding=24)` | zoom into an element, or an `(x, y, width, height)` box in viewport pixels, over `zoom_in` seconds; hold; zoom back out over `zoom_out`. See [Zoom](#zoom) |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
 | `d.caption(text, hold=0, position="bottom")` | show a caption bar; `None` hides it. `hold=` seconds keeps the page still, `hold="read"` for the caption's reading time. The previous caption stays up until it could be read. `position=` is `"bottom"`, `"top"` or `"auto"` (see below) |
 | `d.card(kicker, title, text="", hold=3)` | full-screen title card; it fades out at the next action or use of `d.page`, so a card that ends the scene stays up. Right after the scene's first `d.goto`, it's up from the clip's first frame |
@@ -148,6 +149,36 @@ and colours come from `[tool.ckan-demo.brand]` (see the
 [README](../README.md#configuration)).
 
 Record without captions (`--no-captions`) when you will narrate.
+
+## Zoom
+
+`d.zoom` gets in close to something small, such as a badge, a form field or
+a row in a table, then goes back to the whole page:
+
+```python
+d.caption("Each ticket shows how long it has waited")
+d.zoom(page.locator(".ticket-age").first, hold=3)          # fits it in the frame, up to 3×
+d.zoom(page.locator("#facets"), scale=1.5, zoom_in=1.2)    # a gentler, slower zoom
+d.zoom((0, 0, 960, 540), hold=2, zoom_out=1)               # the top left quarter
+```
+
+The area fills as much of the frame as fits with `padding` pixels around it,
+up to 3×; `scale=` sets the factor instead. Near the edge of the screen the
+view stops at the edge rather than showing past it, so the area may not be
+centred. An element is scrolled into view first; a box is in viewport pixels,
+as on screen now. `zoom_in`, `hold` and `zoom_out` are seconds at
+`--speed 1`, and both zooms ease in and out.
+
+The page is re-rendered larger, not blown up from pixels, so text stays
+sharp. The pointer moves with the page and stays over what it was on, and a
+caption keeps its size and place, so one shown before the zoom reads alongside
+it. Zoom is a look, not a mode: it's out again when `d.zoom` returns, so click
+and type before or after it.
+
+The zoom is a CSS transform on `<body>`. While it's in, elements the page
+fixes to the screen (`position: fixed`, e.g. a fixed header) move with the
+page instead, so a scrolled page with a fixed header shows the header in the
+wrong place; `position: sticky` is fine.
 
 ## Screenshots for docs
 

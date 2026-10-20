@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from ckan_demo.config import Brand
@@ -273,3 +275,78 @@ def test_instant_card_skips_the_fade_in(chromium):
     page.close()
 
     assert opacity == "1"
+
+
+def _body_box(page) -> dict:
+    return page.evaluate("() => document.body.getBoundingClientRect().toJSON()")
+
+
+def test_zoom_fills_the_frame_with_the_area_and_keeps_the_overlay_unscaled(director):
+    page = director._page
+    page.mouse.move(740, 320)  # over #high
+    director.caption("Look here")
+    box = page.locator("#high").bounding_box()  # 200x40 at the top middle
+
+    scale = page.evaluate("box => window.__demo.zoom(box, 50, {padding: 24})", box)
+
+    assert scale == pytest.approx(3)  # capped: 1280 / 248 would be more
+    zoomed = page.locator("#high").bounding_box()
+    assert zoomed["width"] == pytest.approx(600)
+    # Centred on the button.
+    assert zoomed["x"] + zoomed["width"] / 2 == pytest.approx(640, abs=1)
+    assert zoomed["y"] + zoomed["height"] / 2 == pytest.approx(360, abs=1)
+    # The caption keeps its size; the pointer stays over the button.
+    assert page.eval_on_selector("#demo-caption", "el => el.getBoundingClientRect().height") < 100
+    cursor = page.eval_on_selector("#demo-cursor", "el => el.getBoundingClientRect().toJSON()")
+    assert zoomed["x"] <= cursor["x"] + 3 <= zoomed["x"] + zoomed["width"]
+    assert zoomed["y"] <= cursor["y"] + 3 <= zoomed["y"] + zoomed["height"]
+
+    page.evaluate("() => window.__demo.zoom(null, 50)")
+
+    assert page.locator("#high").bounding_box() == box
+    assert page.evaluate("() => [document.body.style.transform, document.documentElement.style.overflowX]") == ["", ""]
+
+
+def test_zoom_never_shows_past_the_edge_of_the_page(director):
+    page = director._page
+    box = page.locator("#corner").bounding_box()  # bottom left corner
+
+    page.evaluate("box => window.__demo.zoom(box, 0, {scale: 2})", box)
+
+    body = _body_box(page)
+    assert body["x"] == pytest.approx(0, abs=1)  # the left edge stays at the left
+    assert body["y"] + body["height"] == pytest.approx(720, abs=1)  # the bottom at the bottom
+    assert body["width"] == pytest.approx(2560, abs=1)
+
+
+def test_zoom_on_a_scrolled_page_goes_to_the_area(tall):
+    d = Director(tall, Options(base_url="http://x", width=1280, height=720, speed=10))
+    far = tall.locator("#far")
+    d.point(far)  # scrolls it into view
+
+    tall.evaluate("box => window.__demo.zoom(box, 0, {scale: 2})", far.bounding_box())
+
+    zoomed = far.bounding_box()
+    assert zoomed["height"] == pytest.approx(80)
+    assert zoomed["y"] + zoomed["height"] / 2 == pytest.approx(360, abs=2)
+
+
+def test_director_zoom_takes_its_time_and_zooms_back_out(director):
+    page = director._page
+    before = page.locator("#high").bounding_box()
+
+    started = time.monotonic()
+    director.zoom(page.locator("#high"), hold=1, zoom_in=2, zoom_out=1)  # 0.4 s at --speed 10
+
+    assert time.monotonic() - started == pytest.approx(0.4, abs=0.2)
+    assert page.locator("#high").bounding_box() == before
+    assert _body_box(page)["width"] == 1280
+
+
+def test_director_zoom_takes_an_area_and_checks_its_arguments(director):
+    director.zoom((0, 0, 640, 360), hold=0, zoom_in=0, zoom_out=0)
+
+    with pytest.raises(ValueError, match="scale must be 1 or more"):
+        director.zoom((0, 0, 10, 10), scale=0.5)
+    with pytest.raises(ValueError, match="0 or more"):
+        director.zoom((0, 0, 10, 10), hold=-1)

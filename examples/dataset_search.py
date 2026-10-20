@@ -167,8 +167,8 @@ def dataset(d: Director) -> None:
 
             details = first(d.page.get_by_role("heading", name="Additional Information"))
             if details:
-                d.caption("Scroll down for its format, size and other details", hold="read")
-                d.spotlight(details.locator("xpath=.."), hold=2)
+                d.caption("Scroll down for its format, size and other details", position="top")
+                d.zoom(details.locator("xpath=.."), hold=3, zoom_in=1, zoom_out=0.8)
     else:
         d.screenshot("dataset-page")
 

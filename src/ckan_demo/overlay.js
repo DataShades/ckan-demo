@@ -23,6 +23,12 @@
         html.demo-screenshot .demo-ripple,
         html.demo-screenshot #demo-sync { display: none !important; }
 
+        /* The overlay's parts are popovers, in the top layer (see raise()), so
+           this undoes the browser's popover styles; the rules below set theirs. */
+        #demo-cursor, .demo-ripple, #demo-caption, #demo-keys, #demo-spotlight, #demo-card, #demo-popup, #demo-sync {
+            inset: auto; width: auto; height: auto; margin: 0; padding: 0; border: 0;
+            overflow: visible; background: none; color: inherit;
+        }
         #demo-cursor {
             position: fixed; z-index: 2147483647; left: 0; top: 0;
             width: 22px; height: 22px; margin: -3px 0 0 -3px;
@@ -144,6 +150,7 @@
         spotlight = document.createElement("div");
         spotlight.id = "demo-spotlight";
         document.documentElement.append(cursor, caption, keys, card, spotlight);
+        raise(spotlight, [card, caption, keys, cursor]);  // bottom to top
 
         // Restore the pointer position from the previous page.
         let last = null;
@@ -174,6 +181,23 @@
     }
 
     document.addEventListener("mousemove", (e) => cursor && move(e.clientX, e.clientY), true);
+    /*
+     * Shows `el` above everything on the page, even what sits at the highest
+     * z-index after the overlay, like an extension's UI: in the top layer,
+     * where popovers go, stacked in the order they're shown. `above` are
+     * shown again after it, so they stay on top. Browsers without popovers
+     * keep the z-index.
+     */
+    function raise(el, above = []) {
+        if (!el.showPopover) return;
+        for (const part of [el, ...above]) {
+            if (!part.isConnected) continue;
+            part.popover = "manual";
+            if (part.matches(":popover-open")) part.hidePopover();
+            part.showPopover();
+        }
+    }
+
     function press(x, y) {
         cursor.classList.add("down");
         const ripple = document.createElement("div");
@@ -181,6 +205,7 @@
         ripple.style.left = x + "px";
         ripple.style.top = y + "px";
         document.documentElement.appendChild(ripple);
+        raise(ripple, [cursor]);
         setTimeout(() => ripple.remove(), 600);
     }
 
@@ -312,6 +337,7 @@
             };
             window.addEventListener("message", resize);
             document.documentElement.append(frame);
+            raise(frame, [spotlight, card, caption, keys, cursor]);
         },
         caption(text, position = "bottom") {
             if (!text) {
@@ -482,6 +508,7 @@
                     "position:fixed;z-index:2147483647;left:0;top:0;width:32px;height:32px;" +
                     "background:#f0f;pointer-events:none";
                 document.documentElement.appendChild(marker);
+                raise(marker);
             }
             return new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         },

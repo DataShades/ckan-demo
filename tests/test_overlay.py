@@ -386,3 +386,29 @@ def test_the_pointer_follows_into_a_frame(framed):
 
     left, top = framed._page.eval_on_selector("#demo-cursor", "el => [el.style.left, el.style.top]")
     assert (left, top) == ("800px", "250px")
+
+
+def test_the_overlay_is_above_ui_added_later_at_the_highest_z_index(director):
+    page = director._page
+    # As an extension adds its UI after the overlay.
+    page.evaluate(
+        """() => {
+            const ui = document.createElement("div");
+            ui.style.cssText = "position:fixed; z-index:2147483647; inset:0; pointer-events:none";
+            document.documentElement.append(ui);
+        }"""
+    )
+    director.caption("Over everything")
+    director.click(page.locator("#high"))
+
+    # All in the top layer, the ripple from the click too.
+    layers = page.evaluate("""() => [...document.querySelectorAll(":popover-open")].map(el => el.id || el.className)""")
+    assert {"demo-spotlight", "demo-card", "demo-caption", "demo-keys", "demo-cursor", "demo-ripple"} <= set(layers)
+    # Popovers keep the overlay's own layout.
+    caption = page.eval_on_selector("#demo-caption", "el => el.getBoundingClientRect().toJSON()")
+    assert caption["bottom"] == pytest.approx(720 - 40, abs=1)
+    assert caption["width"] < 1280 * 0.7 + 1
+    card = page.eval_on_selector("#demo-card", "el => el.getBoundingClientRect().toJSON()")
+    assert (card["width"], card["height"]) == (1280, 720)
+    cursor = page.eval_on_selector("#demo-cursor", "el => el.getBoundingClientRect().toJSON()")
+    assert (cursor["width"], cursor["height"]) == (22, 22)

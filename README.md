@@ -10,7 +10,7 @@ types at a human pace, shows captions and title cards, and joins the scenes
 into one MP4. Re-recording after a UI change is one command.
 
 It is a standalone tool, not a CKAN plugin: it records any portal it can
-reach. Seeding the data a demo needs goes through
+reach, and can load a Chromium browser extension to demo that extension. Seeding the data a demo needs goes through
 [ckanapi](https://github.com/ckan/ckanapi): over the action API, or locally
 alongside the test factories your extension already has.
 
@@ -130,7 +130,7 @@ recording before it starts.
 ## Documentation
 
 - [Writing scenarios](docs/scenarios.md): scenes, users, the `Director`
-  helpers, screenshots
+  helpers, screenshots, browser extensions
 - [Seeding](docs/seeding.md): demo users, seeding through the API or
   locally with your test factories, where seeding code lives, `--reset`
 - [Tips and troubleshooting](docs/tips.md): pacing, flaky steps, dev-only
@@ -139,6 +139,7 @@ recording before it starts.
 ## Who uses it
 
 - [ckanext-issues](../ckanext-issues/demo/): the support tickets demo
+- [Scope](https://github.com/mutantsan/firefox_scope) (`demo/`): a browser extension, demoed on a CKAN portal
 
 ## Development
 

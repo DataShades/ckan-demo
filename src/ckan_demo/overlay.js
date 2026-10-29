@@ -7,7 +7,9 @@
  * zooming the page (a transform on <body>) leaves them at their size.
  */
 (() => {
-    if (window.__demo) return;
+    // Frames get none: a second pointer would show in them. The top page's
+    // pointer is moved over them with follow().
+    if (window.__demo || window !== window.top) return;
 
     const css = `
         .debug, #flDebug { display: none !important; }
@@ -35,6 +37,14 @@
             border: 3px solid rgba(37, 99, 235, 0.85);
             animation: demo-ripple 0.5s ease-out forwards;
         }
+        #demo-popup {
+            position: fixed; z-index: 2147483642; top: 8px; right: 16px;
+            border: 0; border-radius: 8px; background: Canvas; color-scheme: light dark;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2), 0 8px 28px rgba(0, 0, 0, 0.22);
+            opacity: 0; transform: translateY(-6px);
+            transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+        }
+        #demo-popup.shown { opacity: 1; transform: none; }
         @keyframes demo-ripple {
             from { transform: scale(0.3); opacity: 1; }
             to   { transform: scale(1.6); opacity: 0; }
@@ -136,14 +146,23 @@
         document.documentElement.append(cursor, caption, keys, card, spotlight);
 
         // Restore the pointer position from the previous page.
-        const last = JSON.parse(sessionStorage.getItem("demo-cursor") || "null");
+        let last = null;
+        try {
+            last = JSON.parse(sessionStorage.getItem("demo-cursor") || "null");
+        } catch {
+            // No storage on this page.
+        }
         if (last) move(last.x, last.y);
     }
 
     function move(x, y) {
         pointer = { x, y, width: 22, height: 22 };
         drawCursor();
-        sessionStorage.setItem("demo-cursor", JSON.stringify({ x, y }));
+        try {
+            sessionStorage.setItem("demo-cursor", JSON.stringify({ x, y }));
+        } catch {
+            // No storage on this page (about:blank, sandboxed); not restored.
+        }
     }
 
     // Over the pointer's spot on the page, zoomed or not.
@@ -155,17 +174,21 @@
     }
 
     document.addEventListener("mousemove", (e) => cursor && move(e.clientX, e.clientY), true);
-    document.addEventListener("mousedown", (e) => {
-        if (!cursor) return;
+    function press(x, y) {
         cursor.classList.add("down");
         const ripple = document.createElement("div");
         ripple.className = "demo-ripple";
-        ripple.style.left = e.clientX + "px";
-        ripple.style.top = e.clientY + "px";
+        ripple.style.left = x + "px";
+        ripple.style.top = y + "px";
         document.documentElement.appendChild(ripple);
         setTimeout(() => ripple.remove(), 600);
-    }, true);
+    }
+
+    document.addEventListener("mousedown", (e) => cursor && press(e.clientX, e.clientY), true);
     document.addEventListener("mouseup", () => cursor && cursor.classList.remove("down"), true);
+
+    // Mouse events over a frame go to the frame, not this page.
+    const overFrame = (x, y) => ["IFRAME", "FRAME", "OBJECT", "EMBED"].includes(document.elementFromPoint(x, y)?.tagName);
 
     const escape = (text) => {
         const div = document.createElement("div");
@@ -236,6 +259,12 @@
         el.style.transition = properties.map((name) => `${name} ${ms}ms ${ZOOM_EASING}`).join(", ");
         apply();
         return new Promise((resolve) => setTimeout(() => {
+            // A transition that started late (a busy machine starts it a
+            // frame or more after the timer) jumps to its end, so callers
+            // see the final state.
+            for (const animation of el.getAnimations()) {
+                if (properties.includes(animation.transitionProperty)) animation.finish();
+            }
             el.style.transition = "";
             resolve();
         }, ms));
@@ -247,6 +276,43 @@
     const ease = (t) => t * t * t * (10 - 15 * t + 6 * t * t);
 
     window.__demo = {
+        // The pointer moved to x, y; moves it here if a frame got the event.
+        follow(x, y) {
+            if (cursor && overFrame(x, y)) move(x, y);
+        },
+        // A click at x, y; shows it here if a frame got the event.
+        tap(x, y, down) {
+            if (!cursor || !overFrame(x, y)) return;
+            if (down) press(x, y);
+            else cursor.classList.remove("down");
+        },
+        // A browser extension's popup, framed at the top right as the
+        // browser shows it; null closes it. It's shown once the frame posts
+        // its size (Director.open_popup), and follows it, unless `height` is set.
+        popup(url, height) {
+            const old = document.getElementById("demo-popup");
+            if (old) {
+                old.id = "";
+                old.classList.remove("shown");
+                setTimeout(() => old.remove(), 150);
+            }
+            if (!url) return;
+            const frame = document.createElement("iframe");
+            frame.id = "demo-popup";
+            frame.src = url;
+            frame.style.width = "340px";
+            frame.style.height = (height || 400) + "px";
+            const resize = (event) => {
+                if (event.source !== frame.contentWindow || !event.data?.demoPopupSize) return;
+                const [width, fitted] = event.data.demoPopupSize;
+                // Browsers cap popups at 800 x 600.
+                frame.style.width = Math.min(width, 800) + "px";
+                if (!height) frame.style.height = Math.min(fitted, 600) + "px";
+                frame.classList.add("shown");
+            };
+            window.addEventListener("message", resize);
+            document.documentElement.append(frame);
+        },
         caption(text, position = "bottom") {
             if (!text) {
                 clearTimeout(captionMove);
@@ -271,8 +337,14 @@
         },
         // A badge of keycaps, e.g. ["Ctrl", "Enter"], for `ms` milliseconds:
         // just above a bottom caption, below a top one, else at the bottom.
+        // Key badges for `ms`, or until the next call without `ms`; no caps
+        // hides them.
         keys(caps, ms) {
             clearTimeout(keysHide);
+            if (!caps || !caps.length) {
+                keys.classList.remove("shown");
+                return;
+            }
             keys.innerHTML = caps.map((cap) => `<kbd>${escape(cap)}</kbd>`).join("<span>+</span>");
             keys.style.top = keys.style.bottom = "";
             if (caption.classList.contains("shown")) {
@@ -285,7 +357,7 @@
                 }
             }
             keys.classList.add("shown");
-            keysHide = setTimeout(() => keys.classList.remove("shown"), ms);
+            if (ms) keysHide = setTimeout(() => keys.classList.remove("shown"), ms);
         },
         // Dim everything but `box` (viewport pixels), `padding` px around it;
         // no box fades the dimming out.

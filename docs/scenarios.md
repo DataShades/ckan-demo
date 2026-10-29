@@ -59,11 +59,12 @@ typing is key by key, and there is time to read. Durations are in seconds at
 | Helper | |
 | --- | --- |
 | `d.goto(path)` | open a page (path or full URL) and wait until the network is idle |
-| `d.click(locator)` | glide to the element, click, short pause |
+| `d.click(target)` | glide to the element, click, short pause. `target` is a locator, or a box in viewport pixels (`{"x", "y", "width", "height"}`) for what locators can't reach; the click lands in its middle |
 | `d.type(locator, text, clear=False)` | click into a field and type; `clear=True` empties it first |
 | `d.select(locator, value=..., label=...)` | choose an option in a native `<select>` |
 | `d.press(key, badge=None)` | press a key (`"Enter"`, `"Escape"`, `"Control+Enter"`). Shortcuts show a key badge (<kbd>Ctrl</kbd> + <kbd>Enter</kbd>) next to the caption just before the press; `badge=True` or `False` turns it on or off for any key |
-| `d.point(locator)` | glide to an element without clicking, to draw attention |
+| `d.point(target)` | glide to an element (or a box, as for `click`) without clicking, to draw attention |
+| `with d.hold(key, badge=True): ...` | hold a key down while the block runs, its badge up the whole time: hover and click with Shift held. Holds nest, and the badge shows them together (<kbd>Shift</kbd> + <kbd>Alt</kbd>) |
 | `d.spotlight(locator, hold=2, padding=8)` | dim the rest of the page around an element for `hold` seconds, to say "look here". The pointer and caption stay on top |
 | `d.zoom(area, hold=2, zoom_in=0.8, zoom_out=0.6, scale=None, padding=24)` | zoom into an element, or an `(x, y, width, height)` box in viewport pixels, over `zoom_in` seconds; hold; zoom back out over `zoom_out`. See [Zoom](#zoom) |
 | `with d.navigates(): ...` | wrap an action that loads a new page; waits for it |
@@ -184,3 +185,64 @@ wrong place; `position: sticky` is fine.
 
 `d.screenshot("queue")` saves `screenshots/queue.png` in the output folder,
 without the pointer or the caption. Pass a locator to capture one element.
+
+## Browser extensions
+
+A scenario can load unpacked Chromium extensions into every scene, to demo
+the extension itself on a portal (or any site):
+
+```python
+from ckan_demo import BrowserExtension, Director, Scenario
+
+scenario = Scenario(
+    "Scope",
+    extensions=[BrowserExtension("../dist/chrome", grant_optional_permissions=True)],
+)
+
+
+@scenario.scene("01-inspect")
+def inspect(d: Director) -> None:
+    scope = d.extension()                  # the only one; or d.extension("Scope")
+    scope.evaluate("() => chrome.storage.local.set({ showGaps: true })")
+    d.goto("/dataset/")
+    with d.hold("Shift"):
+        d.point(d.page.locator(".dataset-heading a").first)
+    popup = d.open_popup()                 # its toolbar popup, framed in the page
+    d.click(popup.get_by_label("Show gaps"))
+    d.close_popup()
+```
+
+- **Paths** are relative to the scenario file and point at the folder with
+  `manifest.json`: for a build step, the built folder. A plain path string
+  works too: `extensions=["../dist/chrome"]`.
+- **`grant_optional_permissions=True`** grants the manifest's optional
+  permissions and host permissions up front, since the prompt that asks for
+  them can't be clicked in a recording. ckan-demo loads a copy; the folder
+  itself isn't changed.
+- **`d.extension()`** has the extension's `id` and `url(path)` for its
+  pages, and runs JavaScript functions in two places:
+  - `evaluate(js, arg)` in its service worker, where its `chrome.*` APIs
+    are. Each scene waits for the service worker before it starts.
+  - `evaluate_in_page(d.page, js, arg)` in the world its content scripts
+    share in the page: their globals, and the closed shadow roots extensions
+    often put their UI in, which locators can't reach. Return a box from
+    `getBoundingClientRect().toJSON()` to point at or click a part of that
+    UI with `d.point` and `d.click`.
+- **The browser's own UI isn't in the video**: the toolbar button, its popup
+  and the extension's keyboard shortcuts (`commands`). Playwright records the
+  page and sends keys to it, not to the browser. Instead:
+  - `d.open_popup()` shows the toolbar popup framed at the top right of the
+    page, where the browser puts it, and returns its frame for locators.
+    It fits the popup's content as that changes (`height=` fixes it), and
+    `d.close_popup()` closes it. To frame it, ckan-demo's copy makes the
+    popup page web accessible.
+  - For a shortcut, show its badge and do what it does through the service
+    worker. Keys pressed with `d.press` go to the page.
+- Scenes with extensions run in the full Chromium build
+  (`playwright install chromium` installs it) with a fresh profile per scene.
+  Only Chromium: Playwright's Firefox can't load extensions, so record a
+  cross-browser extension's Chrome build.
+- The pointer follows into frames on the page (a framed popup, a resource
+  preview), where the page itself gets no mouse events.
+
+[Scope](https://github.com/mutantsan/firefox_scope)'s demo, in its `demo/` folder, uses all of this.

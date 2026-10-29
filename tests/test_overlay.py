@@ -350,3 +350,39 @@ def test_director_zoom_takes_an_area_and_checks_its_arguments(director):
         director.zoom((0, 0, 10, 10), scale=0.5)
     with pytest.raises(ValueError, match="0 or more"):
         director.zoom((0, 0, 10, 10), hold=-1)
+
+
+def test_a_held_badge_stays_until_cleared(director):
+    page = director._page
+    page.evaluate("() => window.__demo.keys(['Shift'])")
+    page.wait_for_timeout(2500)  # longer than a pressed key's badge
+    assert page.eval_on_selector("#demo-keys", "el => el.classList.contains('shown')")
+
+    page.evaluate("() => window.__demo.keys([])")
+    assert not page.eval_on_selector("#demo-keys", "el => el.classList.contains('shown')")
+
+
+@pytest.fixture
+def framed(chromium):
+    page = chromium.new_page(viewport={"width": 1280, "height": 720})
+    page.set_content(
+        "<body style='margin:0'><iframe style='position:fixed; left:600px; top:100px; width:400px; height:300px;"
+        " border:0' srcdoc='<p>Inside</p>'></iframe></body>"
+    )
+    page.add_script_tag(content=OVERLAY)
+    page.frames[1].add_script_tag(content=OVERLAY)  # as init scripts run in every frame
+    page.mouse.move(100, 100)
+    yield Director(page, Options(base_url="http://x", width=1280, height=720, speed=10))
+    page.close()
+
+
+def test_frames_get_no_overlay_of_their_own(framed):
+    assert framed._page.frames[1].evaluate("() => window.__demo === undefined")
+    assert framed._page.frames[1].evaluate("() => !document.getElementById('demo-cursor')")
+
+
+def test_the_pointer_follows_into_a_frame(framed):
+    framed.point({"x": 780, "y": 230, "width": 40, "height": 40})
+
+    left, top = framed._page.eval_on_selector("#demo-cursor", "el => [el.style.left, el.style.top]")
+    assert (left, top) == ("800px", "250px")

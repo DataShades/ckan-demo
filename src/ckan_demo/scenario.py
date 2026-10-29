@@ -15,6 +15,7 @@ def search(d: Director) -> None:
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 import re
 import sys
@@ -22,6 +23,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, overload
+
+from ckan_demo.extensions import BrowserExtension
 
 if TYPE_CHECKING:
     from ckan_demo.director import Director
@@ -85,6 +88,21 @@ class Scenario:
     setup_hook: SetupHook | None = None
     setup_local: bool = False
     setup_optional: bool = False
+    extensions: list[BrowserExtension | str | Path] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        self.extensions = [
+            extension if isinstance(extension, BrowserExtension) else BrowserExtension(extension)
+            for extension in self.extensions
+        ]
+
+    def browser_extensions(self, base: Path | None = None) -> list[BrowserExtension]:
+        """The extensions, with relative paths resolved against ``base``."""
+        return [
+            dataclasses.replace(extension, path=(base or Path.cwd()) / extension.path)
+            for extension in self.extensions
+            if isinstance(extension, BrowserExtension)
+        ]
 
     def scene(
         self, name: str, *, user: str | None = None, title: str = ""
@@ -175,4 +193,9 @@ def load_scenario(path: str | Path) -> Scenario:
         raise ScenarioError(f"{path} must define exactly one Scenario, found {len(found)}")
     if not found[0].scenes:
         raise ScenarioError(f"{path}: the scenario has no scenes")
-    return found[0]
+    scenario = found[0]
+    scenario.extensions = list(scenario.browser_extensions(path.parent))
+    for extension in scenario.extensions:
+        if not (extension.path / "manifest.json").is_file():
+            raise ScenarioError(f"{path}: no manifest.json in {extension.path}; is the extension built?")
+    return scenario

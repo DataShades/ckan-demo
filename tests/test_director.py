@@ -24,6 +24,7 @@ class FakePage:
         self.syncs: list[bool] = []
         self.mouse = self
         self.keyboard = self
+        self.frames = [self]  # the main frame only
 
     def wait_for_timeout(self, ms):
         self.waits.append(ms / 1000)
@@ -53,6 +54,15 @@ class FakePage:
 
     def press(self, key):
         self.pressed.append(key)
+
+    def down(self, key):
+        self.pressed.append(f"down {key}")
+
+    def up(self, key):
+        self.pressed.append(f"up {key}")
+
+    def click(self, x, y):
+        self.pressed.append(f"click {x},{y}")
 
     def goto(self, url, wait_until=None):
         self.clock.now += 1.5  # loading
@@ -324,6 +334,35 @@ def test_badges_show_without_captions_too(clock):
     d.press("Control+Enter")
 
     assert d._page.badges
+
+
+def test_held_keys_keep_their_badge_up_until_released(clock):
+    d = _director(clock)
+
+    with d.hold("Shift"), d.hold("Alt"):
+        pass
+
+    assert d._page.pressed == ["down Shift", "down Alt", "up Alt", "up Shift"]
+    assert d._page.badges == [["Shift"], ["Shift", "Alt"], ["Shift"], []]
+
+
+def test_a_held_key_is_released_when_the_block_fails(clock):
+    d = _director(clock)
+
+    with pytest.raises(RuntimeError), d.hold("Shift", badge=False):
+        raise RuntimeError("step failed")
+
+    assert d._page.pressed == ["down Shift", "up Shift"]
+    assert d._page.badges == []
+
+
+def test_click_a_box_clicks_its_middle(clock):
+    d = _director(clock)
+
+    d.click({"x": 100, "y": 200, "width": 40, "height": 20})
+
+    assert d._page.pressed == ["click 120.0,210.0"]
+    assert d._page.moves[-1] == (120, 210)
 
 
 def test_spotlight_dims_around_the_element_then_lifts(clock):

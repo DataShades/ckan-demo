@@ -12,10 +12,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-if TYPE_CHECKING:
-    from collections.abc import Iterator
+from playwright.sync_api import Error as PlaywrightError
 
-    from playwright.sync_api import FloatRect, Locator, Page
+from ckan_demo import extensions
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator, Sequence
+
+    from playwright.sync_api import FloatRect, FrameLocator, Locator, Page
+
+    from ckan_demo.extensions import Extension
 
 
 def reading_time(text: str) -> float:
@@ -116,6 +122,21 @@ class Options:
     brand: dict[str, str] = field(default_factory=dict)
 
 
+# Run in a popup framed by Director.open_popup: tells the page its size,
+# which the page can't read from another origin, now and when it changes.
+POPUP_SIZE = """body => {
+    const post = () => {
+        const rect = body.getBoundingClientRect();
+        const style = getComputedStyle(body);
+        const width = rect.width + parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+        const height = rect.height + parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+        parent.postMessage({ demoPopupSize: [Math.ceil(width), Math.ceil(height)] }, "*");
+    };
+    new ResizeObserver(post).observe(body);
+    post();
+}"""
+
+
 class Director:
     """Helpers for one scene. Times are seconds at ``--speed 1``."""
 
@@ -127,9 +148,11 @@ class Director:
     # How long the sync marker stays up: several frames at the video's 25 fps.
     SYNC_SECONDS = 0.3
 
-    def __init__(self, page: Page, options: Options) -> None:
+    def __init__(self, page: Page, options: Options, extensions: Sequence[Extension] = ()) -> None:
         self._page = page
         self.options = options
+        self._extensions = list(extensions)
+        self._held: list[str] = []  # keys down in hold()
         self.x = options.width / 2
         self.y = options.height / 2
         self.started = time.monotonic()
@@ -156,6 +179,30 @@ class Director:
         """The Playwright page. Using it hides a title card that's still up."""
         self._hide_card()
         return self._page
+
+    def extension(self, name: str | None = None) -> Extension:
+        """A browser extension the scenario loads: by its manifest name or
+        folder, or the only one. See :class:`~ckan_demo.extensions.Extension`."""
+        return extensions.find(self._extensions, name)
+
+    def open_popup(self, name: str | None = None, *, height: int | None = None) -> FrameLocator:
+        """Open an extension's toolbar popup, framed at the top right of the
+        page as the browser shows it (the browser's own is out of the video).
+        Returns its frame, to point at and click what's in it. It fits its
+        content as that changes; ``height`` fixes it instead."""
+        extension = self.extension(name)
+        self._hide_card()
+        self._page.evaluate("([url, height]) => window.__demo.popup(url, height)", [extension.popup_url, height])
+        frame = self._page.frame_locator("#demo-popup")
+        frame.locator("body").evaluate(POPUP_SIZE)
+        self._page.wait_for_function("() => document.getElementById('demo-popup')?.classList.contains('shown')")
+        self.pause(0.6)
+        return frame
+
+    def close_popup(self) -> None:
+        """Close the popup :meth:`open_popup` opened."""
+        self._page.evaluate("() => window.__demo.popup(null)")
+        self.pause(0.4)
 
     # ── Pacing and narration ────────────────────────────────────────────────
 
@@ -274,10 +321,12 @@ class Director:
 
     # ── Pointer and keyboard ────────────────────────────────────────────────
 
-    def point(self, locator: Locator) -> None:
-        """Move the pointer to the middle of ``locator``."""
+    def point(self, target: Locator | FloatRect) -> None:
+        """Move the pointer to the middle of ``target``: an element, or a box
+        in viewport pixels (``{"x", "y", "width", "height"}``) for what
+        locators can't reach, like an extension's closed shadow root."""
         self._hide_card()
-        box = self._reveal(locator)
+        box = target if isinstance(target, dict) else self._reveal(target)
         if self._caption and self._caption_position == "auto" and self.options.captions:
             self._page.evaluate("box => window.__demo.avoid(box)", box)
         x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
@@ -287,9 +336,10 @@ class Director:
     def _reveal(self, locator: Locator) -> FloatRect:
         """Scroll ``locator`` into view smoothly and return its box."""
         locator.wait_for(state="visible")
-        if locator.evaluate("(el, speed) => window.__demo.reveal(el, speed)", self.options.speed):
+        if locator.evaluate("(el, speed) => window.__demo?.reveal(el, speed)", self.options.speed):
             self.pause(0.15)  # settle before the pointer moves
-        # Instant fallback for scrolling boxes inside the page, like dialogs.
+        # Instant fallback for scrolling boxes inside the page, like dialogs,
+        # and for frames, which have no overlay.
         locator.scroll_into_view_if_needed()
         box = locator.bounding_box()
         if box is None:
@@ -300,9 +350,14 @@ class Director:
         """Move the pointer to ``x, y`` along :func:`pointer_path`, in real time."""
         duration = move_duration(math.dist((self.x, self.y), (x, y))) / self.options.speed
         frames = max(2, round(duration * self.FPS))
+        # The overlay follows mouse events, which a frame on the page takes
+        # while the pointer is over it.
+        follow = len(self._page.frames) > 1
         start = time.monotonic()
         for i, (px, py) in enumerate(pointer_path((self.x, self.y), (x, y), frames), 1):
             self._page.mouse.move(px, py)
+            if follow:
+                self._page.evaluate("([x, y]) => window.__demo.follow(x, y)", [px, py])
             # Against the clock, so slow mouse events don't stretch the move.
             remaining = start + duration * i / frames - time.monotonic()
             if remaining > 0:
@@ -359,10 +414,25 @@ class Director:
         self.pause(hold)
         self._page.evaluate("ms => window.__demo.zoom(null, ms)", zoom_out * 1000 / speed)
 
-    def click(self, locator: Locator) -> None:
-        self.point(locator)
-        locator.click()
+    def click(self, target: Locator | FloatRect) -> None:
+        """Point at ``target`` (see :meth:`point`) and click it. Keys held
+        with :meth:`hold` apply, e.g. Shift+click."""
+        self.point(target)
+        self._tap(down=True)
+        if isinstance(target, dict):
+            self._page.mouse.click(self.x, self.y)
+        else:
+            target.click()
+        self._tap(down=False)
         self.pause(0.4)
+
+    def _tap(self, *, down: bool) -> None:
+        """Show a click the overlay can't see: one a frame on the page gets."""
+        if len(self._page.frames) == 1:
+            return
+        # The click may have started loading another page.
+        with contextlib.suppress(PlaywrightError):
+            self._page.evaluate("([x, y, down]) => window.__demo.tap(x, y, down)", [self.x, self.y, down])
 
     def type(self, locator: Locator, text: str, *, clear: bool = False) -> None:
         """Click a field and type ``text`` key by key."""
@@ -385,6 +455,29 @@ class Director:
         else:
             locator.select_option(value)
         self.pause(0.6)
+
+    @contextlib.contextmanager
+    def hold(self, key: str, *, badge: bool = True) -> Iterator[None]:
+        """Hold ``key`` down (``"Shift"``) while the block runs, with its key
+        badge up the whole time. Holds can nest: ``Shift`` + ``Alt``."""
+        self._hide_card()
+        self._held.append(key)
+        if badge:
+            self._show_held()
+            self.pause(0.4)
+        self._page.keyboard.down(key)
+        try:
+            yield
+        finally:
+            self._page.keyboard.up(key)
+            self._held.remove(key)
+            if badge:
+                self._show_held()
+        self.pause(0.3)
+
+    def _show_held(self) -> None:
+        caps = [cap for key in self._held for cap in key_caps(key)]
+        self._page.evaluate("caps => window.__demo.keys(caps)", caps)
 
     def press(self, key: str, *, badge: bool | None = None) -> None:
         """Press a key (``"Enter"``) or shortcut (``"Control+Enter"``).
